@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  gateway:
+    name: Gateway (Maven)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Build & test
+        run: ./mvnw -B -ntp verify
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: ai-factory-gateway
+          path: gateway/target/ai-factory-gateway-*.jar
+          retention-days: 7
+
+  scripts:
+    name: Pipeline scripts (shellcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Lint scripts
+        run: shellcheck -S warning scripts/*.sh
+
+  yaml:
+    name: K8s manifests (kubeval)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate YAML syntax
+        run: |
+          pip install pyyaml
+          python -c '
+          import sys, glob, yaml
+          ok = True
+          for f in sorted(glob.glob("k8s/*.yaml")):
+              try:
+                  list(yaml.safe_load_all(open(f, encoding="utf-8")))
+                  print(f"OK  {f}")
+              except yaml.YAMLError as e:
+                  ok = False
+                  print(f"FAIL {f}: {e}")
+          sys.exit(0 if ok else 1)
+          '

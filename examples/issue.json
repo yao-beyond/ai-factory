@@ -1,0 +1,11 @@
+{
+  "source": "jira",
+  "externalId": "JIRA-123",
+  "title": "Funding rate rounding bug",
+  "description": "BTCUSDT funding rate calculation has rounding mismatch under high precision cases.",
+  "priority": "P1",
+  "labels": ["trading", "bug", "funding-rate"],
+  "repo": "futures-api",
+  "targetBranch": "main",
+  "maxAgents": 3
+}

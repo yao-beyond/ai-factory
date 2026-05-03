@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-issue-gateway
+  namespace: ai-factory
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-issue-gateway
+  template:
+    metadata:
+      labels:
+        app: ai-issue-gateway
+    spec:
+      serviceAccountName: ai-factory-orchestrator
+      containers:
+        - name: gateway
+          image: your-registry/ai-factory-gateway:0.1.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: AI_FACTORY_WORK_DIR
+              value: /opt/ai-jobs
+            - name: AI_FACTORY_PIPELINE_SCRIPT
+              value: /opt/ai-pipeline/create-k8s-job.sh
+            - name: JOB_TEMPLATE
+              value: /opt/k8s/04-orchestrator-job-template.yaml
+          envFrom:
+            - secretRef:
+                name: ai-secrets
+          volumeMounts:
+            - name: jobs
+              mountPath: /opt/ai-jobs
+            - name: pipeline-scripts
+              mountPath: /opt/ai-pipeline
+            - name: job-template
+              mountPath: /opt/k8s
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: jobs
+          emptyDir: {}
+        - name: pipeline-scripts
+          configMap:
+            name: ai-pipeline-scripts
+            defaultMode: 0755
+        - name: job-template
+          configMap:
+            name: ai-job-template
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-issue-gateway
+  namespace: ai-factory
+spec:
+  selector:
+    app: ai-issue-gateway
+  ports:
+    - port: 80
+      targetPort: 8080

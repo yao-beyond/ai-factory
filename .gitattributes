@@ -1,0 +1,16 @@
+* text=auto eol=lf
+
+*.sh        text eol=lf
+*.bash      text eol=lf
+mvnw        text eol=lf
+*.cmd       text eol=crlf
+
+*.jar       binary
+*.png       binary
+*.jpg       binary
+*.gif       binary
+*.ico       binary
+
+# GitHub linguist hints
+docs/**     linguist-documentation
+examples/** linguist-documentation

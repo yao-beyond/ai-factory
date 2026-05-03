@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ai-task-${TASK_ID}
+  namespace: ai-factory
+  labels:
+    app: ai-factory
+    task-id: "${TASK_ID}"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: ai-factory
+        task-id: "${TASK_ID}"
+    spec:
+      serviceAccountName: ai-factory-orchestrator
+      restartPolicy: Never
+      containers:
+        - name: orchestrator
+          image: your-registry/ai-agent-orchestrator:0.1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TASK_ID
+              value: "${TASK_ID}"
+            - name: REPO_URL
+              value: "${REPO_URL}"
+            - name: TARGET_BRANCH
+              value: "${TARGET_BRANCH}"
+            - name: MAX_AGENTS
+              value: "${MAX_AGENTS}"
+            - name: AI_FACTORY_WORK_DIR
+              value: /opt/ai-jobs
+            - name: ISSUE_JSON_B64
+              value: "${ISSUE_JSON_B64}"
+          envFrom:
+            - secretRef:
+                name: ai-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"

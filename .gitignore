@@ -1,0 +1,39 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# JVM build artifacts
+target/
+build/
+*.class
+*.jar
+*.war
+hs_err_pid*
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+nbproject/
+.factorypath
+
+# Logs and runtime
+logs/
+*.log
+.work/
+
+# Local env
+.env
+.env.local
+.env.*.local
+
+# oh-my-claudecode local agent state
+.omc/
+.claude/
+
+# Maven Wrapper jar lives under .mvn/wrapper/maven-wrapper.jar (kept on purpose).
+# Maven build cache:
+.mvn/timing.properties

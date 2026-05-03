@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-factory-orchestrator
+  namespace: ai-factory
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ai-factory-job-runner
+  namespace: ai-factory
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-factory-job-runner
+  namespace: ai-factory
+subjects:
+  - kind: ServiceAccount
+    name: ai-factory-orchestrator
+roleRef:
+  kind: Role
+  name: ai-factory-job-runner
+  apiGroup: rbac.authorization.k8s.io

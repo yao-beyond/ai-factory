@@ -1,0 +1,15 @@
+# NOTE: This file is intentionally minimal. The actual pipeline scripts are
+# packaged into a ConfigMap by `make apply-configmaps` (see Makefile), which
+# runs:
+#   kubectl create configmap ai-pipeline-scripts --from-file=scripts/ ...
+#   kubectl create configmap ai-job-template --from-file=k8s/04-orchestrator-job-template.yaml ...
+# This stub exists so `kubectl apply -f k8s/` does not fail on a missing file.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-pipeline-scripts-readme
+  namespace: ai-factory
+data:
+  README: |
+    Run `make apply-configmaps` to populate ai-pipeline-scripts and ai-job-template
+    ConfigMaps from the local repo. CI should regenerate them on every deploy.

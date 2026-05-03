@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a problem with the gateway or pipeline scripts
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Clear description of the bug. Include the failing endpoint or script and the actual vs expected behavior.
+      placeholder: |
+        I called POST /gateway/issue and ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: A minimal request, payload, or command sequence.
+      render: bash
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Output from the gateway, `run.log`, or `status.txt`. Redact secrets.
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Git commit hash or release tag you saw the bug on.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Run mode
+      options:
+        - Local (bash run-task.sh)
+        - Kubernetes (Job)
+        - Docker
+    validations:
+      required: true

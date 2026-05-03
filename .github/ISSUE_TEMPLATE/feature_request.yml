@@ -1,0 +1,38 @@
+name: Feature request
+description: Propose a new feature or improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is the user pain or missing capability?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work? Include API shape, config keys, or pseudo-flow if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about and why you ruled them out.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - Gateway (Spring Boot)
+        - Pipeline scripts
+        - Kubernetes manifests
+        - Docs / examples
+        - Other
+    validations:
+      required: true

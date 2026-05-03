@@ -1,0 +1,13 @@
+server:
+  port: 8080
+
+ai-factory:
+  work-dir: ${AI_FACTORY_WORK_DIR:/opt/ai-jobs}
+  pipeline-script: ${AI_FACTORY_PIPELINE_SCRIPT:/opt/ai-pipeline/run-task.sh}
+  telegram-secret: ${TELEGRAM_WEBHOOK_SECRET:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
