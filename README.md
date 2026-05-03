@@ -27,7 +27,11 @@ Human review & merge
 - `gateway/` — Spring Boot MVC gateway. Receives Jira / Telegram / direct issues, persists `issue.json`, fires the pipeline, exposes status.
 - `scripts/` — Bash pipeline (plan, dev, select, MR, review, fix). Status is written to `<workdir>/<taskId>/status.txt` at every stage.
 - `k8s/` — Namespace, secrets template, gateway Deployment, orchestrator Job template, RBAC.
-- `docs/ai/` — generated plan/review artifacts live here per task.
+- `docs/ai/` — review checklist and a plan template. **Note:** real
+  per-task artifacts (`IMPLEMENTATION_PLAN.md`, `CODEX_REVIEW.md`,
+  `FIX_SUMMARY.md`, `CLAUDE_SUMMARY_*.md`) are generated at runtime inside
+  the *target* repo (the one cloned from `REPO_URL`), not here. See
+  `docs/ai/IMPLEMENTATION_PLAN.template.md` for the expected plan structure.
 - `examples/` — sample payloads.
 
 ## Endpoints

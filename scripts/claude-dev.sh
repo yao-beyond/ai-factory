@@ -21,6 +21,14 @@ else
 fi
 git checkout -B "$BRANCH"
 
+# IMPLEMENTATION_PLAN.md is generated at runtime by codex-plan.sh inside the
+# cloned target repo. It is *not* a static file in the ai-factory repo. If we
+# get here without it, the plan stage failed silently.
+if [ ! -f docs/ai/IMPLEMENTATION_PLAN.md ]; then
+  echo "ERROR: docs/ai/IMPLEMENTATION_PLAN.md missing. Did codex-plan.sh run?" >&2
+  exit 5
+fi
+
 case "$AGENT_NO" in
   1) STYLE="保守實作版：最小修改、低風險、優先通過測試" ;;
   2) STYLE="乾淨重構版：維持需求範圍內，改善可讀性與模組邊界" ;;
