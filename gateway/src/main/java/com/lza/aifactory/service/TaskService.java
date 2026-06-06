@@ -155,18 +155,18 @@ public class TaskService {
 
     /** True when the generated project has an index.html that can be previewed in a browser. */
     public boolean hasPreview(String taskId) {
-        if (!isLocalResult(taskId)) return false;
+        if (!isNewProjectResult(taskId)) return false;
         return resultDir(taskId).map(d -> Files.isRegularFile(d.resolve("index.html"))).orElse(false);
     }
 
     /**
-     * Preview is only for new-project (local) results. An existing-repo task also
-     * clones into workspace/repo, so previewing it would expose the private cloned
-     * source. The mode is read from the authoritative issue.json (written once at
-     * submit) — NOT inferred from sibling artifacts like result.zip, which sit in
-     * the same writable dir and could be stale/forged and bypass the gate.
+     * Authoritative check that this is a new-project (local) task. Read from the
+     * issue.json written once at submit — NOT inferred from sibling artifacts like
+     * result.zip, which live in the same writable dir and could be stale/forged.
+     * Used to gate preview, download, and the completed-page UI so an existing-repo
+     * clone is never exposed.
      */
-    private boolean isLocalResult(String taskId) {
+    public boolean isNewProjectResult(String taskId) {
         Path issue = workDir.resolve(normalizeTaskId(taskId)).resolve("issue.json");
         if (!Files.exists(issue)) return false;
         try {
@@ -184,7 +184,7 @@ public class TaskService {
      * new-project (local) results — never an existing-repo clone.
      */
     public Optional<Path> resolvePreviewFile(String taskId, String relativePath) {
-        if (!isLocalResult(taskId)) return Optional.empty();
+        if (!isNewProjectResult(taskId)) return Optional.empty();
         Path dir = resultDir(taskId).orElse(null);
         if (dir == null) return Optional.empty();
         String rel = (relativePath == null || relativePath.isBlank()) ? "index.html" : relativePath;

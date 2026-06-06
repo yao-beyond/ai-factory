@@ -52,6 +52,11 @@ public class TaskController {
     /** Download the generated project (local/new-project mode) as a zip. */
     @GetMapping("/result/{taskId}")
     public ResponseEntity<Resource> result(@PathVariable String taskId) {
+        // Only new-project tasks may be downloaded; never serve an existing-repo
+        // task's artifacts even if a stale result.zip is present.
+        if (!taskService.isNewProjectResult(taskId)) {
+            return ResponseEntity.notFound().build();
+        }
         Path zip = taskService.resultZip(taskId).orElse(null);
         if (zip == null) {
             return ResponseEntity.notFound().build();
@@ -284,7 +289,8 @@ public class TaskController {
                     .map(md -> "<div class=\"sumtitle\">AI 做了這些變更：</div>" + renderSummaryHtml(md))
                     .orElse("");
             // New-project (local) result: a downloadable project, no git/PR wording.
-            if (taskService.resultZip(r.taskId()).isPresent()) {
+            // Gate on the authoritative mode, not the result.zip artifact.
+            if (taskService.isNewProjectResult(r.taskId())) {
                 String dl = "<a class=\"btn\" href=\"/gateway/result/" + esc(r.taskId()) + "\">⬇️ 下載你的專案（zip）</a>";
                 // If it's a web project (has index.html), offer a one-click browser preview.
                 String preview = taskService.hasPreview(r.taskId())

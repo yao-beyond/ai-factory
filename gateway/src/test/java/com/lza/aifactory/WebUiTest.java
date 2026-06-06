@@ -70,6 +70,17 @@ class WebUiTest {
     }
 
     @Test
+    void downloadDeniedForExistingRepoEvenWithStaleZip() throws Exception {
+        // An existing-repo task with a stale result.zip must not be downloadable.
+        java.nio.file.Path dir = workDir().resolve("UAT-DL-EXISTING");
+        java.nio.file.Files.createDirectories(dir);
+        java.nio.file.Files.writeString(dir.resolve("issue.json"),
+                "{\"source\":\"web\",\"title\":\"t\",\"description\":\"d\",\"mode\":\"existing\"}");
+        java.nio.file.Files.write(dir.resolve("result.zip"), new byte[]{0x50, 0x4b, 0x05, 0x06});
+        mvc.perform(get("/gateway/result/UAT-DL-EXISTING")).andExpect(status().isNotFound());
+    }
+
+    @Test
     void localResultPageShowsDownloadNotPullRequest() throws Exception {
         String body = """
                 {"source":"web","mode":"new","externalId":"UAT-LOCAL","title":"全新需求","description":"做個東西","maxAgents":1}
