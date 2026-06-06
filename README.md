@@ -1,178 +1,121 @@
 <p align="center">
-  <img src="docs/mascot.jpg" alt="AI Factory 吉祥物：粉圓 🫧" width="180"/>
+  <img src="docs/mascot.jpg" width="180"/>
 </p>
 
-<h1 align="center">AI Factory</h1>
+<h1 align="center">LZA 🫧 粉圓軟體工廠</h1>
+
 <p align="center">
-  <b>把一句白話需求，自動變成一個可審查的 Pull Request。</b><br/>
-  <sub>吉祥物：粉圓 🫧 — 像牠把口水吹成一個個泡泡，AI Factory 把你的一句需求吹成可審查的成果</sub>
+  <strong>「你的想法，就是生產線的起點。」—— 粉圓 Fen-Yuan</strong><br>
+  讓軟體開發像吹泡泡一樣簡單、優雅且自動化。
 </p>
 
-<p align="center"><b>繁體中文</b> | <a href="README.en.md">English</a></p>
+<p align="center">
+  <b>正體中文</b> | <a href="README.en.md">English</a>
+</p>
 
 ---
 
-你只要用白話描述想要什麼。AI Factory 會幫你規劃、派多個 AI 工程師平行開發、挑出最好的版本、
-跑一輪自動審查、修正問題，最後開一個**草稿 Pull Request** 等人類核准。支援
-**GitHub、GitLab、Bitbucket**，並設計成能直接套進你既有的系統。
+## 🌟 這能幫我做什麼？
 
-```text
-一個需求（Jira / Telegram / 網頁表單 / curl）
-   ↓
-🧠 規劃  →  👩‍💻 平行開發 ×N  →  🧪 挑最佳  →  📬 開 PR  →  🔍 審查  →  🛠️ 修正
-   ↓
-✅ 一個標記為 "ai-generated" 的草稿 Pull Request，等待人類合併
-```
+**AI Factory** 是一個專為「想解決問題，但不想（或沒空）寫程式」的人設計的 AI 自動化開發平台。
+
+你只需要用白話文描述你的需求（例如：「幫我在網頁左上角加一個深藍色的回饋按鈕」），AI 就會自動為你：
+1. **拆解計畫**：把你的願望變成具體的工程步驟。
+2. **多工開發**：派出多個 AI 機器人同時嘗試不同的寫法。
+3. **優中選優**：自動挑選出最穩定、最符合規範的成果。
+4. **交付成果**：幫你開好 Pull Request（給工程師審查）或直接讓你下載整份專案。
 
 ---
 
-## 誰該看哪份文件
+## 🚀 三步驟快速啟動
 
-| 你是… | 從這裡開始 |
-| --- | --- |
-| 在評估這東西值不值得用 | 本頁（往下看） |
-| 要**使用**它（不懂程式） | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) |
-| 要**安裝**它 | [docs/SETUP.md](docs/SETUP.md) |
-| 要擴充它的開發者 | 本頁 →〈技術參考〉 |
+不管你是老闆、PM 還是開發者，只要你的電腦有安裝 Docker，請打開終端機（Terminal）執行以下指令：
+
+1.  **設定精靈**：自動偵測環境並產生設定檔。
+    ```bash
+    bash scripts/ai-factory-init.sh
+    ```
+2.  **健康檢查**：確保你的 AI 工具（Claude/Codex）都已準備就緒。
+    ```bash
+    bash scripts/doctor.sh
+    ```
+3.  **開工啟動**：
+    ```bash
+    docker compose up
+    ```
+    *啟動後，請開啟瀏覽器訪問：[http://localhost:8080](http://localhost:8080)*
 
 ---
 
-## 為什麼用它
+## 💡 兩種運作模式
 
-- **交付更快** — 例行性的修改，不需要工程師從零開始，就能從一句需求變成可審查的 PR。
-- **內建品質** — 每個變更在人看到之前都已被 AI 審查並修正過；交易／金流類邏輯一律要求附測試。
-- **預設安全** — AI 永遠不會 push 到 `main`；所有產出都是**草稿 PR**、必須人類核准。
-  不會破壞你既有的流程。
+### ✨ 模式 A：「做一個全新的東西」(Local 模式)
+*   **適合對象**：素人、想快速驗證點子的創業家。
+*   **特色**：不需要 Git 帳號，不需要複雜的金鑰。AI 從零開始生成整個專案，完成後直接讓你下載一個 `.zip` 壓縮檔。
+
+### 🔧 模式 B：「修改現有專案」
+*   **適合對象**：工程團隊、產品經理。
+*   **特色**：需在 `ai-factory.yml` 設定 Repo 位址與 Token。完成後 AI 會自動在 GitHub/GitLab/Bitbucket 開啟 Pull Request (PR) 供人類審查，確保品質。
 
 ---
 
-## 三步驟開始
+## 🎨 非技術者的使用旅程
 
+1.  **許願**：在首頁填寫標題與詳細描述，並選擇「開發強度」：
+    *   ⚡ **快速**：小修小改，幾分鐘搞定。
+    *   ⚖️ **穩健**：標準開發流程，兼顧速度與品質。
+    *   🔬 **徹底**：深度重構或複雜功能，AI 會進行多輪辯論與測試。
+2.  **監看**：進入進度頁，你會看到可愛的 Emoji 進度條，系統會告訴你「⏳ **預計還要約 N 分鐘**」（時間以 UTC+8 顯示），每 3 秒自動更新。
+3.  **關卡：📝 開工前確認**：AI 規劃完後會停下來，用白話文告訴你它打算怎麼改。你可以按 **✅ 確認開工** 或 **❌ 不滿意取消**。
+4.  **驗收**：
+    *   現有專案：點擊「查看成果草案」連結，去 PR 頁面看 AI 寫的程式。
+    *   全新專案：點擊「⬇️ **下載你的專案**」，並閱讀 AI 附帶的變更摘要。
+
+---
+
+## 🛠️ 技術參考（給開發團隊）
+
+### 必要工具
+系統會自動從你的 `PATH` 或 `~/.local/bin` 偵測以下 AI CLI，若缺漏會在網頁端提示安裝：
+*   **Codex**: `npm i -g @openai/codex`
+*   **Claude Code**: 詳見 [Claude 官網說明](https://claude.com/claude-code)
+
+### 本機啟動 (Java 模式)
+如果你不想用 Docker，也可以直接啟動 Spring Boot 服務：
 ```bash
-# 1. 設定（互動式精靈 — 不必手動編輯檔案）
-bash scripts/ai-factory-init.sh
-
-# 2. 檢查一切是否連得上
-bash scripts/doctor.sh
-
-# 3. 啟動
-docker compose up        # 服務於 http://localhost:8080
+cd gateway
+export AI_FACTORY_WORK_DIR=$(pwd)/../.work
+export AI_FACTORY_PIPELINE_SCRIPT=$(pwd)/../scripts/run-task.sh
+./mvnw spring-boot:run
+# 若需換埠：-Dspring-boot.run.arguments="--server.port=8081"
 ```
 
-接著送出範例任務並觀看它執行：
+### 設定檔 `ai-factory.yml` 亮點
+你可以透過這個檔案精準控制工廠行為：
+*   `agents.maxAgents`: 同時並行開發的最大 AI 數量。
+*   `security.confirmBeforeBuild`: 是否開啟「開工前確認」關卡。
+*   `security.protectedBranches`: 受保護分支名單，AI 絕不會直接推送到這些地方。
+*   `security.requireHumanMerge`: 強制所有產出必須經過人類審查合併。
 
-```bash
-curl -X POST http://localhost:8080/gateway/issue \
-  -H 'Content-Type: application/json' \
-  -d @examples/hello-world-issue.json
-# 打開白話進度頁：
-#   http://localhost:8080/gateway/ui/<taskId>
-```
+### API 端點與 Webhooks
+*   **UI 路由**: `/` (首頁)、`/gateway/ui` (列表)、`/gateway/ui/{id}` (進度)
+*   **任務操作**: `POST /gateway/issue` (建立)、`POST /gateway/confirm/{id}` (確認)
+*   **整合 Webhooks**: 支援 `/webhook/jira` 與 `/webhook/telegram`
+*   **監控**: `/actuator/health`
 
-想手動設定、或用其他方式部署（純 Java、Kubernetes）？請見 [docs/SETUP.md](docs/SETUP.md)。
+### 🛡️ 安全護欄 (Safety Guardrails)
+*   **不直推**: AI 永遠不會直接 push 到 `main` 分支。
+*   **草稿標記**: 所有 PR 都會標註 `ai-generated` 標籤。
+*   **白名單**: 僅允許在 `ai-factory.yml` 指定的 repo 中運作。
+*   **自動收斂**: 若 AI 執行過程崩潰，任務會自動轉為失敗並釋放資源，不會卡死生產線。
 
 ---
 
-## 設定集中在一個檔案
-
-除了密鑰以外的所有設定都放在 `ai-factory.yml`（範例見
-[config/ai-factory.example.yml](config/ai-factory.example.yml) 以及
-[github](examples/ai-factory.github.yml) / [gitlab](examples/ai-factory.gitlab.yml) 版本）：
-
-```yaml
-git:
-  provider: github          # github | gitlab | bitbucket
-  repo: https://github.com/acme/app.git
-  targetBranch: main
-agents:
-  maxAgents: 3
-security:
-  allowRepositories: [ "https://github.com/acme/*" ]
-  protectedBranches: [ main, "release/*" ]
-  requireHumanMerge: true
-  draftPullRequests: true
-```
-
-密鑰留在環境變數／`.env`（見 [.env.example](.env.example)）。設定檔載入順序：
-`AI_FACTORY_CONFIG` → `./ai-factory.yml` → `~/.ai-factory/config.yml`；環境變數會覆寫檔案，
-方便 CI／Kubernetes 使用。
+## 📖 延伸閱讀
+*   [操作者手冊 (USER_GUIDE.md)](docs/USER_GUIDE.md) - 詳細的功能操作說明。
+*   [管理員安裝指南 (SETUP.md)](docs/SETUP.md) - 關於環境變數與權限的進階設定。
 
 ---
-
-## 技術參考
-
-### 流程
-
-```text
-Jira / Telegram / 直接提交 issue
-   ↓
-Issue Gateway  (POST /webhook/jira | /webhook/telegram | /gateway/issue)
-   ↓
-[ 本機 / docker：bash run-task.sh ]   [ k8s 模式：kubectl apply Job ]
-   ↓
-Orchestrator
-   ├─ codex-plan.sh         → docs/ai/IMPLEMENTATION_PLAN.md  + 分支 ai/<id>/plan
-   ├─ claude-dev.sh × N     → 分支 ai/<id>/dev-1..N（以 plan 為基底平行開發）
-   ├─ select-best-branch.sh → 分支 ai/<id>/final
-   ├─ git/create-pr.sh      → Pull / Merge request（github | gitlab | bitbucket）
-   ├─ codex-review.sh       → docs/ai/CODEX_REVIEW.md
-   └─ claude-fix.sh         → docs/ai/FIX_SUMMARY.md
-   ↓
-人類審查並合併
-```
-
-### 模組
-
-- `gateway/` — Spring Boot 閘道。接收 issue、對程式庫白名單做驗證、保存 `issue.json`、觸發
-  pipeline，並提供狀態與一個對人友善的進度頁。
-- `scripts/` — Bash pipeline。每個階段把狀態寫到 `<workdir>/<taskId>/status.txt`。
-  - `scripts/git/` — 平台無關的 PR/MR 建立（`create-pr.sh` + `providers/*.sh`）與保護分支推送守衛。
-  - `scripts/config/` — `ai-factory.yml` 載入器。
-  - `scripts/ai-factory-init.sh`、`scripts/doctor.sh` — 設定精靈與啟動前檢查。
-- `config/`、`examples/` — 範例設定與範例 payload。
-- `k8s/` — Namespace、secrets 範本、gateway Deployment、orchestrator Job 範本、RBAC。
-- `charts/` — gateway 的最小 Helm chart。
-- `docs/ai/` — 審查檢查表與計畫範本。真正的每任務產物（`IMPLEMENTATION_PLAN.md`、
-  `CODEX_REVIEW.md`、`FIX_SUMMARY.md`、`CLAUDE_SUMMARY_*.md`）是在執行時於**目標**程式庫內產生，
-  不在此處。
-
-### 端點
-
-| 方法 | 路徑 | 用途 |
-| ------ | -------------------------- | ------------------------------------------- |
-| GET    | `/`                        | **給非技術者的提需求表單（HTML）** |
-| GET    | `/gateway/ui`              | **所有任務的友善列表（HTML）** |
-| GET    | `/gateway/ui/{taskId}`     | **對人友善的進度頁（HTML）** |
-| POST   | `/gateway/issue`           | 直接提交結構化的 `IssueDto` |
-| POST   | `/webhook/jira`            | Jira webhook（解析 `issue.fields.*`） |
-| POST   | `/webhook/telegram`        | Telegram bot webhook（驗證 secret） |
-| GET    | `/gateway/status/{taskId}` | 任務最新狀態（JSON） |
-| GET    | `/gateway/tasks`           | 列出所有已知任務（JSON） |
-| GET    | `/actuator/health`         | 就緒／存活探針 |
-
-### 狀態機
-
-`SUBMITTED → RUNNING → PLANNING → DEVELOPING → SELECTING → MR_CREATED → REVIEWING → FIXING → COMPLETED`
-
-`FAILED` 可取代任何階段；`MESSAGE` 欄位會帶 `stage:<name> rc:<exit-code>`。
-每個狀態在進度頁上都有白話說明，進行中還會顯示預估剩餘時間。
-
-### Kubernetes 部署
-
-```bash
-make build            # 建置 gateway + agent 映像
-make apply-k8s        # namespace、secrets、RBAC、configmaps、gateway deployment
-```
-
-gateway pod 以 ConfigMap 掛載 pipeline 腳本與 Job 範本。提交時它會執行 `create-k8s-job.sh`，
-將 `issue.json` 以 base64 環境變數（`ISSUE_JSON_B64`）嵌入 orchestrator Job；orchestrator 由
-agent 映像執行（內含完整 `scripts/` 樹，包括 `git/` 與 `config/`）。另提供 `charts/` 下的 Helm chart。
-
-### 正式環境護欄
-
-- Agent 永遠只 push `ai/<task-id>/*` 分支；`scripts/git/branch-guard.sh` 即使 token 有權限也會
-  拒絕 push 到保護分支。
-- 所有產出都是標記 `ai-generated` 的**草稿** Pull/Merge request，必須人類合併。
-- gateway 會拒絕不在 `security.allowRepositories`（`AI_FACTORY_ALLOW_REPOSITORIES`）內的程式庫、
-  限制 `maxAgents` 上限，並在 pipeline 崩潰時把任務收斂為 `FAILED` 而非永遠卡住。
-- `select-best-branch.sh` 對 `final` 分支使用 `--force-with-lease`（絕不用 `--force`）。
+<p align="center">
+  由 LZA 團隊與粉圓 🫧 共同維護。
+</p>

@@ -1,87 +1,134 @@
 <p align="center">
-  <img src="docs/mascot.jpg" alt="AI Factory mascot: Pinkie 🫧" width="180"/>
+  <img src="docs/mascot.jpg" width="180"/>
 </p>
 
-<h1 align="center">AI Factory</h1>
+<h1 align="center">LZA 🫧 Pinkie Software Factory</h1>
+
 <p align="center">
-  <b>Turn a plain-language request into a reviewed Pull Request — automatically.</b><br/>
-  <sub>Mascot: Pinkie (粉圓) 🫧 — just as she blows bubbles, AI Factory blows your one-line request into a reviewable result</sub>
+  <strong>"Your idea is the start of the production line." — Pinkie (粉圓)</strong><br>
+  Make building software as simple and elegant as blowing bubbles.
 </p>
 
-<p align="center"><a href="README.md">繁體中文</a> | <b>English</b></p>
+<p align="center">
+  <a href="README.md">正體中文</a> | <b>English</b>
+</p>
 
 ---
 
-You describe what you want. AI Factory plans it, has several AI engineers build it in
-parallel, picks the best version, runs an automated review, fixes the findings, and opens
-a draft Pull Request for a human to approve. It works with **GitHub, GitLab, or Bitbucket**
-and is designed to drop into systems you already have.
+## 🌟 What can it do for me?
 
-```text
-A request (Jira / Telegram / a form / curl)
-   ↓
-🧠 Plan  →  👩‍💻 Build ×N  →  🧪 Pick best  →  📬 Open PR  →  🔍 Review  →  🛠️ Fix
-   ↓
-✅ A draft Pull Request, labeled "ai-generated", waiting for a human to merge
-```
+**AI Factory** is an AI automation platform built for people who want to solve a
+problem but don't want to (or don't have time to) write code.
 
----
+Just describe what you need in plain language (e.g. "add a dark-blue feedback
+button to the top-left of the web page"), and the AI will automatically:
 
-## Who should read what
+1. **Plan** — turn your wish into concrete engineering steps.
+2. **Build in parallel** — send several AI agents to try different approaches at once.
+3. **Pick the best** — automatically choose the most stable, compliant result.
+4. **Deliver** — open a Pull Request for an engineer to review, or just let you download the whole project.
 
-| You are… | Start here |
-| --- | --- |
-| Deciding if this is worth it | This page (below) |
-| Going to **use** it (no coding) | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) |
-| Going to **install** it | [docs/SETUP.md](docs/SETUP.md) |
-| A developer extending it | This page → *Technical reference* |
+Works with **GitHub / GitLab / Bitbucket**, and is designed to drop into systems you already have.
 
 ---
 
-## Why use it
+## 🚀 Get started in 3 steps
 
-- **Faster delivery** — routine changes go from request to reviewable PR without a developer
-  starting from scratch.
-- **Built-in quality** — every change is reviewed and fixed by AI before a human sees it, and
-  trading/payment-style logic is required to ship with tests.
-- **Safe by default** — AI never pushes to `main`; every result is a *draft* PR a human must
-  approve. Nothing in your existing process breaks.
-
----
-
-## Get started in 3 steps
+If your computer has Docker, open a terminal and run:
 
 ```bash
-# 1. Configure (interactive wizard — no need to edit files by hand)
+# 1. Setup wizard (auto-detects your git remote, generates ai-factory.yml and .env)
 bash scripts/ai-factory-init.sh
 
-# 2. Check everything is connected
+# 2. Health check (confirms tokens, AI tools and connectivity; errors explained in plain language)
 bash scripts/doctor.sh
 
-# 3. Start
-docker compose up        # serves http://localhost:8080
+# 3. Start (serves http://localhost:8080)
+docker compose up
 ```
 
-Then submit the demo task and watch it run:
-
-```bash
-curl -X POST http://localhost:8080/gateway/issue \
-  -H 'Content-Type: application/json' \
-  -d @examples/hello-world-issue.json
-# open the human-friendly progress page:
-#   http://localhost:8080/gateway/ui/<taskId>
-```
-
-Prefer to configure by hand or deploy another way (plain Java, Kubernetes)? See
-[docs/SETUP.md](docs/SETUP.md).
+Then open your browser at **http://localhost:8080**
 
 ---
 
-## Configuration in one file
+## 💡 Two modes (choose on the home page)
 
-Everything except secrets lives in `ai-factory.yml` (see
-[config/ai-factory.example.yml](config/ai-factory.example.yml) and the
-[github](examples/ai-factory.github.yml) / [gitlab](examples/ai-factory.gitlab.yml) examples):
+### ✨ Mode A: "Make something brand-new" (local mode)
+- **For**: non-technical users, founders validating an idea quickly.
+- **What you get**: **no git account or token required**. The AI generates a whole
+  project from scratch and gives you a downloadable `.zip` when it's done.
+
+### 🔧 Mode B: "Change an existing project"
+- **For**: engineering teams, product managers.
+- **What you get**: set the repo and token in `ai-factory.yml`. The AI opens a draft
+  Pull Request on GitHub/GitLab/Bitbucket for a human to review.
+
+---
+
+## 🎨 The non-technical user journey
+
+1. **Wish** — on the home page, fill in a title and description and pick a
+   "development strength": ⚡ Quick / ⚖️ Balanced / 🔬 Thorough.
+2. **Watch** — the progress page shows an emoji progress bar and "⏳ about N minutes
+   left" (times shown in UTC+8), auto-refreshing every 3 seconds.
+3. **📝 Pre-flight confirmation** — after planning, the AI pauses and tells you in
+   plain language what it intends to do. You press **✅ Start building** or **❌ Cancel**.
+4. **Review** —
+   - New project: click "⬇️ Download your project" and read the AI's plain-language
+     change summary.
+   - Existing project: click "View the draft result" to open the PR; if unsure, just
+     send the page link to an engineer. The AI never touches your production branch.
+
+> If something fails, the page tells you why (e.g. which AI tool needs installing) — it never silently hangs.
+
+---
+
+## 🛠️ Technical reference (for engineering teams)
+
+### Flow
+
+```text
+A request (Jira / Telegram / web form / curl)
+   ↓
+Issue Gateway
+   ↓
+[ local / docker: bash run-task.sh ]       [ k8s mode: kubectl apply Job ]
+   ↓
+Orchestrator
+   ├─ codex-plan.sh         → plan + plain-language plan summary (plan_summary.md)
+   ├─ (pre-flight gate: wait for the user's ✅ / ❌)
+   ├─ claude-dev.sh × N     → parallel candidate branches
+   ├─ select-best-branch.sh → pick the best
+   ├─ existing repo: git/create-pr.sh → Pull/Merge request
+   │  new project:   skip PR, package result.zip
+   ├─ codex-review.sh       → review
+   └─ claude-fix.sh         → apply fixes + change summary (summary.md)
+   ↓
+Human review / download
+```
+
+### Required AI tools (auto-detected)
+
+Detected from `PATH` and common dirs (e.g. `~/.local/bin`); if missing, the web page
+prompts you to install:
+
+- **Codex**: `npm i -g @openai/codex`
+- **Claude Code**: see [claude.com/claude-code](https://claude.com/claude-code) (the CLI is `claude`)
+
+### Run locally (Java mode)
+
+If you'd rather not use Docker. **Pass these via environment variables** (not `-D`,
+otherwise the pipeline child process won't see them):
+
+```bash
+cd gateway
+export AI_FACTORY_WORK_DIR="$(pwd)/../.work"
+export AI_FACTORY_PIPELINE_SCRIPT="$(pwd)/../scripts/run-task.sh"
+./mvnw spring-boot:run
+# change port: ./mvnw spring-boot:run -Dspring-boot.run.arguments="--server.port=8081"
+```
+
+### Configuration in `ai-factory.yml`
 
 ```yaml
 git:
@@ -89,99 +136,78 @@ git:
   repo: https://github.com/acme/app.git
   targetBranch: main
 agents:
-  maxAgents: 3
+  maxAgents: 3              # max number of AI agents running in parallel
 security:
   allowRepositories: [ "https://github.com/acme/*" ]
   protectedBranches: [ main, "release/*" ]
   requireHumanMerge: true
   draftPullRequests: true
+  confirmBeforeBuild: true        # the pre-flight confirmation gate
+  confirmationTimeoutMinutes: 30
 ```
 
-Secrets stay in the environment / `.env` (see [.env.example](.env.example)). Config file
-precedence: `AI_FACTORY_CONFIG` → `./ai-factory.yml` → `~/.ai-factory/config.yml`; environment
-variables override the file for CI/Kubernetes.
-
----
-
-## Technical reference
-
-### Flow
-
-```text
-Jira / Telegram / direct issue
-   ↓
-Issue Gateway  (POST /webhook/jira | /webhook/telegram | /gateway/issue)
-   ↓
-[ local / docker: bash run-task.sh ]   [ k8s mode: kubectl apply Job ]
-   ↓
-Orchestrator
-   ├─ codex-plan.sh         → docs/ai/IMPLEMENTATION_PLAN.md  + branch ai/<id>/plan
-   ├─ claude-dev.sh × N     → branches ai/<id>/dev-1..N (parallel, off plan)
-   ├─ select-best-branch.sh → branch ai/<id>/final
-   ├─ git/create-pr.sh      → Pull/Merge request (github | gitlab | bitbucket)
-   ├─ codex-review.sh       → docs/ai/CODEX_REVIEW.md
-   └─ claude-fix.sh         → docs/ai/FIX_SUMMARY.md
-   ↓
-Human review & merge
-```
+Secrets stay in environment / `.env`. Load order: `AI_FACTORY_CONFIG` →
+`./ai-factory.yml` → `~/.ai-factory/config.yml`; env vars override the file (for CI/k8s).
 
 ### Modules
 
-- `gateway/` — Spring Boot gateway. Receives issues, validates them against the repository
-  allowlist, persists `issue.json`, fires the pipeline, and exposes status + a human-friendly
-  status page.
-- `scripts/` — Bash pipeline. Status is written to `<workdir>/<taskId>/status.txt` at each stage.
-  - `scripts/git/` — provider-neutral PR/MR creation (`create-pr.sh` + `providers/*.sh`) and the
-    protected-branch push guard.
-  - `scripts/config/` — `ai-factory.yml` loader.
+- `gateway/` — Spring Boot gateway: receives requests, validates the allowlist,
+  fires the pipeline, serves the progress page and download endpoint.
+- `scripts/` — Bash pipeline; status written to `<workdir>/<taskId>/status.txt`.
+  - `scripts/git/` — provider-neutral PR/MR creation and the protected-branch push guard.
+  - `scripts/config/` — `ai-factory.yml` loader and CLI auto-detection.
   - `scripts/ai-factory-init.sh`, `scripts/doctor.sh` — setup wizard and preflight checks.
 - `config/`, `examples/` — example configuration and sample payloads.
-- `k8s/` — Namespace, secrets template, gateway Deployment, orchestrator Job template, RBAC.
-- `charts/` — minimal Helm chart for the gateway.
-- `docs/ai/` — review checklist and a plan template. Real per-task artifacts
-  (`IMPLEMENTATION_PLAN.md`, `CODEX_REVIEW.md`, `FIX_SUMMARY.md`, `CLAUDE_SUMMARY_*.md`) are
-  generated at runtime inside the *target* repo, not here.
+- `charts/` — minimal Helm chart; `k8s/` — raw manifests.
 
 ### Endpoints
 
-| Method | Path                       | Purpose                                     |
-| ------ | -------------------------- | ------------------------------------------- |
-| GET    | `/`                        | **Submission form for non-technical users (HTML)** |
-| GET    | `/gateway/ui`              | **All tasks, friendly list (HTML)**         |
-| GET    | `/gateway/ui/{taskId}`     | **Human-friendly progress page (HTML)**     |
-| POST   | `/gateway/issue`           | Submit a structured `IssueDto` directly     |
-| POST   | `/webhook/jira`            | Jira webhook (parses `issue.fields.*`)      |
-| POST   | `/webhook/telegram`        | Telegram bot webhook (validates secret)     |
-| GET    | `/gateway/status/{taskId}` | Latest status for a task (JSON)             |
-| GET    | `/gateway/tasks`           | List all known tasks (JSON)                 |
-| GET    | `/actuator/health`         | Readiness / liveness                        |
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/` | Submission form for non-technical users |
+| GET | `/gateway/ui` | Friendly list of all tasks |
+| GET | `/gateway/ui/{taskId}` | Human-friendly progress page |
+| POST | `/gateway/issue` | Submit a structured `IssueDto` |
+| POST | `/gateway/confirm/{taskId}` | Pre-flight: start building |
+| POST | `/gateway/cancel/{taskId}` | Pre-flight: cancel |
+| GET | `/gateway/result/{taskId}` | Download a new-project result (zip) |
+| GET | `/gateway/status/{taskId}` | Task status (JSON) |
+| POST | `/webhook/jira`, `/webhook/telegram` | Webhook submission |
+| GET | `/actuator/health` | Readiness / liveness |
 
-### Status state machine
+### State machine
 
-`SUBMITTED → RUNNING → PLANNING → DEVELOPING → SELECTING → MR_CREATED → REVIEWING → FIXING → COMPLETED`
+`SUBMITTED → RUNNING → PLANNING → AWAITING_CONFIRMATION → DEVELOPING → SELECTING → MR_CREATED → REVIEWING → FIXING → COMPLETED`
 
-`FAILED` can replace any stage; the `MESSAGE` field carries `stage:<name> rc:<exit-code>`.
-Each status also has a plain-language label shown on the progress page, plus an estimated
-time remaining while running.
+`FAILED` can replace any stage. Each status has a plain-language label on the progress
+page, plus an estimated time remaining (UTC+8) while running.
 
-### Kubernetes deployment
+### 🛡️ Safety guardrails
 
-```bash
-make build            # build gateway + agent images
-make apply-k8s        # namespace, secrets, RBAC, configmaps, gateway deployment
-```
+- **Never pushes to main**: agents only push `ai/<task-id>/*`; protected branches are
+  refused even if the token allows it.
+- **Draft review**: every PR is labeled `ai-generated` and requires a human merge.
+- **Allowlist**: only repos listed in `ai-factory.yml` are accepted.
+- **Resource safety**: `maxAgents` is capped; a crashed pipeline is reconciled to
+  failed (never hangs); `status.txt` is written atomically.
+- **Result safety**: the download zip excludes `.git`; the download endpoint is
+  protected against path traversal.
 
-The gateway pod mounts the pipeline scripts and Job template as ConfigMaps. On submit it runs
-`create-k8s-job.sh`, which embeds `issue.json` as a base64 env var (`ISSUE_JSON_B64`) into the
-orchestrator Job; the orchestrator runs from the agent image (which contains the full
-`scripts/` tree, including `git/` and `config/`). A Helm chart is also available under `charts/`.
+### Deployment
 
-### Production guardrails
+- **docker compose** (recommended): `docker compose up`
+- **Local Java**: see above
+- **Kubernetes**: `make build && make apply-k8s`, or use the Helm chart in `charts/`
 
-- Agents only ever push `ai/<task-id>/*` branches; `scripts/git/branch-guard.sh` refuses to push
-  to a protected branch even if the token would allow it.
-- Every result is a **draft** Pull/Merge request labeled `ai-generated`, requiring human merge.
-- The gateway rejects any repository not in `security.allowRepositories`
-  (`AI_FACTORY_ALLOW_REPOSITORIES`), caps `maxAgents`, and reconciles a crashed pipeline to
-  `FAILED` instead of hanging.
-- `select-best-branch.sh` uses `--force-with-lease` for the `final` branch (never `--force`).
+---
+
+## 📖 Further reading
+
+- [User guide — docs/USER_GUIDE.md](docs/USER_GUIDE.md) — for operators
+- [Setup guide — docs/SETUP.md](docs/SETUP.md) — for administrators
+- [正體中文 README](README.md)
+
+---
+<p align="center">
+  Maintained by the LZA team and Pinkie 🫧
+</p>
