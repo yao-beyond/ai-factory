@@ -1,10 +1,23 @@
 server:
   port: 8080
 
+spring:
+  # Import the user's ai-factory.yml so AiFactoryProperties can bind it. Optional
+  # so the app still starts without one (defaults apply). AI_FACTORY_CONFIG
+  # overrides the path (compose/k8s set it).
+  config:
+    import: "optional:file:${AI_FACTORY_CONFIG:./ai-factory.yml}"
+
 ai-factory:
   work-dir: ${AI_FACTORY_WORK_DIR:/opt/ai-jobs}
   pipeline-script: ${AI_FACTORY_PIPELINE_SCRIPT:/opt/ai-pipeline/run-task.sh}
   telegram-secret: ${TELEGRAM_WEBHOOK_SECRET:}
+  telegram-bot-token: ${TELEGRAM_BOT_TOKEN:}
+  # Externally reachable base URL, used to build links (e.g. Telegram buttons).
+  public-base-url: ${AI_FACTORY_PUBLIC_BASE_URL:http://localhost:8080}
+  # Comma-separated allowlist of repositories that may be targeted. Wildcards (*)
+  # allowed, e.g. https://github.com/acme/*. Empty = accept any (not recommended).
+  allow-repositories: ${AI_FACTORY_ALLOW_REPOSITORIES:}
 
 management:
   endpoints:

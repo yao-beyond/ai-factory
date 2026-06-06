@@ -1,9 +1,13 @@
 package com.lza.aifactory.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lza.aifactory.config.AiFactoryProperties;
 import com.lza.aifactory.dto.IssueDto;
 import com.lza.aifactory.dto.TaskRecord;
 import com.lza.aifactory.dto.TaskStatus;
+import com.lza.aifactory.pipeline.PipelineExecutor;
+import com.lza.aifactory.pipeline.PipelineRequest;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,25 +24,75 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Stream;
 
 @Service
 public class TaskService {
     private static final Logger log = LoggerFactory.getLogger(TaskService.class);
 
     private final ObjectMapper objectMapper;
+    private final AiFactoryProperties properties;
+    private final PipelineExecutor pipelineExecutor;
+    private final EtaService etaService;
     private final Path workDir;
-    private final String pipelineScript;
+    private final List<String> allowRepositories;
     private final Map<String, TaskRecord> tasks = new ConcurrentHashMap<>();
 
     public TaskService(ObjectMapper objectMapper,
+                       AiFactoryProperties properties,
+                       PipelineExecutor pipelineExecutor,
+                       EtaService etaService,
                        @Value("${ai-factory.work-dir}") String workDir,
-                       @Value("${ai-factory.pipeline-script}") String pipelineScript) {
+                       @Value("${ai-factory.allow-repositories:}") String allowRepositoriesCsv) {
         this.objectMapper = objectMapper;
+        this.properties = properties;
+        this.pipelineExecutor = pipelineExecutor;
+        this.etaService = etaService;
         this.workDir = Path.of(workDir);
-        this.pipelineScript = pipelineScript;
+        // Allowlist = typed config (ai-factory.yml security.allowRepositories)
+        // plus the legacy CSV property, for backward compatibility.
+        this.allowRepositories = new ArrayList<>(properties.getSecurity().getAllowRepositories());
+        this.allowRepositories.addAll(parseCsv(allowRepositoriesCsv));
+        if (this.allowRepositories.isEmpty()) {
+            log.warn("No repository allowlist configured — any repository will be accepted. "
+                    + "Set security.allowRepositories in ai-factory.yml (or AI_FACTORY_ALLOW_REPOSITORIES).");
+        }
+    }
+
+    /** Rebuild the in-memory task list from disk so it survives restarts. */
+    @PostConstruct
+    void restoreFromDisk() {
+        if (!Files.isDirectory(workDir)) return;
+        try (Stream<Path> dirs = Files.list(workDir)) {
+            dirs.filter(Files::isDirectory).forEach(this::restoreOne);
+            if (!tasks.isEmpty()) {
+                log.info("Restored {} task(s) from {}", tasks.size(), workDir);
+            }
+        } catch (IOException e) {
+            log.warn("Could not scan work dir {} on startup: {}", workDir, e.getMessage());
+        }
+    }
+
+    private void restoreOne(Path taskDir) {
+        Path issueFile = taskDir.resolve("issue.json");
+        if (!Files.exists(issueFile)) return;
+        String taskId = taskDir.getFileName().toString();
+        try {
+            IssueDto dto = objectMapper.readValue(Files.readString(issueFile), IssueDto.class);
+            TaskRecord record = new TaskRecord(
+                    taskId, dto.getSource(), dto.getExternalId(), dto.getTitle(),
+                    dto.getRepo(), dto.getTargetBranch(),
+                    TaskStatus.SUBMITTED, "restored", Instant.now(), Instant.now(),
+                    taskDir.toString(), null);
+            tasks.put(taskId, refresh(record));
+        } catch (IOException e) {
+            log.warn("Skipping unreadable task dir {}: {}", taskId, e.getMessage());
+        }
     }
 
     public TaskRecord submit(IssueDto dto) throws IOException {
+        validateRepoAllowed(dto.getRepo());
+
         String taskId = normalizeTaskId(
                 dto.getExternalId() == null || dto.getExternalId().isBlank()
                         ? UUID.randomUUID().toString()
@@ -50,12 +104,24 @@ public class TaskService {
                 objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(dto));
         writeStatus(taskDir, TaskStatus.SUBMITTED, "submitted");
 
-        ProcessBuilder pb = new ProcessBuilder("/bin/bash", pipelineScript, taskId)
-                .redirectOutput(taskDir.resolve("run.log").toFile())
-                .redirectErrorStream(true);
+        pipelineExecutor.start(new PipelineRequest(taskId, taskDir, buildEnv(dto)));
+        etaService.markStart(taskId);
+        appendEvent(taskDir, taskId, "submitted", TaskStatus.SUBMITTED, "submitted");
 
-        Map<String, String> env = pb.environment();
-        env.put("TASK_ID", taskId);
+        log.info("Submitted task taskId={} source={} externalId={} repo={}",
+                taskId, dto.getSource(), dto.getExternalId(), dto.getRepo());
+
+        TaskRecord record = new TaskRecord(
+                taskId, dto.getSource(), dto.getExternalId(), dto.getTitle(),
+                dto.getRepo(), dto.getTargetBranch(),
+                TaskStatus.SUBMITTED, "submitted",
+                Instant.now(), Instant.now(), taskDir.toString(), null);
+        tasks.put(taskId, record);
+        return record;
+    }
+
+    private Map<String, String> buildEnv(IssueDto dto) {
+        Map<String, String> env = new LinkedHashMap<>();
         if (dto.getRepo() != null && isUrlLike(dto.getRepo())) {
             env.put("REPO_URL", dto.getRepo());
         }
@@ -68,18 +134,7 @@ public class TaskService {
         if (dto.getPriority() != null) {
             env.put("ISSUE_PRIORITY", dto.getPriority());
         }
-
-        pb.start();
-        log.info("Submitted task taskId={} source={} externalId={} repo={}",
-                taskId, dto.getSource(), dto.getExternalId(), dto.getRepo());
-
-        TaskRecord record = new TaskRecord(
-                taskId, dto.getSource(), dto.getExternalId(), dto.getTitle(),
-                dto.getRepo(), dto.getTargetBranch(),
-                TaskStatus.SUBMITTED, "submitted",
-                Instant.now(), Instant.now(), taskDir.toString());
-        tasks.put(taskId, record);
-        return record;
+        return env;
     }
 
     public Optional<TaskRecord> findStatus(String taskId) {
@@ -108,7 +163,13 @@ public class TaskService {
                 parsed = record.status();
             }
             String message = kv.getOrDefault("MESSAGE", record.message());
-            TaskRecord updated = record.withStatus(parsed, message);
+            String prUrl = kv.get("PR_URL");
+            // Feed the ETA estimator the moment a task first reaches a terminal state.
+            if (record.status() != parsed) {
+                if (parsed == TaskStatus.COMPLETED) etaService.onCompleted(record.taskId());
+                else if (parsed == TaskStatus.FAILED) etaService.forget(record.taskId());
+            }
+            TaskRecord updated = record.withStatus(parsed, message, prUrl);
             tasks.put(record.taskId(), updated);
             return updated;
         } catch (IOException e) {
@@ -124,6 +185,24 @@ public class TaskService {
         Files.writeString(taskDir.resolve("status.txt"), body);
     }
 
+    /** Append one JSON line to the task's event log (lightweight audit trail). */
+    private void appendEvent(Path taskDir, String taskId, String type, TaskStatus status, String message) {
+        try {
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("timestamp", Instant.now().toString());
+            event.put("taskId", taskId);
+            event.put("type", type);
+            event.put("status", status.name());
+            event.put("message", message);
+            Files.writeString(taskDir.resolve("events.log"),
+                    objectMapper.writeValueAsString(event) + "\n",
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            log.warn("Failed to append event for {}: {}", taskId, e.getMessage());
+        }
+    }
+
     private Map<String, String> parseStatus(String content) {
         Map<String, String> map = new LinkedHashMap<>();
         for (String line : content.split("\\R")) {
@@ -135,6 +214,36 @@ public class TaskService {
 
     private boolean isUrlLike(String value) {
         return value.matches("^(https?|git|ssh)://.+") || value.startsWith("git@");
+    }
+
+    /**
+     * Rejects a submission whose repository is not in the configured allowlist.
+     * Short repo names (resolved server-side from config) and an empty allowlist
+     * are not blocked here.
+     */
+    private void validateRepoAllowed(String repo) {
+        if (repo == null || repo.isBlank() || !isUrlLike(repo)) return;
+        if (allowRepositories.isEmpty()) return;
+        for (String pattern : allowRepositories) {
+            if (globMatch(pattern, repo)) return;
+        }
+        throw new IllegalArgumentException(
+                "Repository '" + repo + "' is not in the allowed list. "
+                        + "Ask an administrator to add it to ai-factory allowRepositories.");
+    }
+
+    private boolean globMatch(String glob, String value) {
+        String regex = "^" + java.util.regex.Pattern.quote(glob).replace("*", "\\E.*\\Q") + "$";
+        return value.matches(regex);
+    }
+
+    private static List<String> parseCsv(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        List<String> out = new ArrayList<>();
+        for (String part : value.split(",")) {
+            if (!part.isBlank()) out.add(part.trim());
+        }
+        return out;
     }
 
     private String normalizeTaskId(String value) {
