@@ -100,3 +100,19 @@ aif_export_pipeline_env() {
   pb="$(echo "$pb" | sed 's/[[:space:]]*$//')"
   [ -n "$pb" ] && export PROTECTED_BRANCHES="${PROTECTED_BRANCHES:-$pb}"
 }
+
+# Locate a CLI by trying each candidate name on PATH and in common install dirs
+# (so it is found even when the gateway runs with a minimal PATH). Echoes the
+# first resolvable absolute path, or nothing.
+aif_find_cli() {
+  local name d
+  local dirs="/opt/homebrew/bin /usr/local/bin /usr/bin ${HOME:-}/.local/bin ${HOME:-}/.npm-global/bin ${HOME:-}/.bun/bin ${HOME:-}/.deno/bin"
+  for name in "$@"; do
+    local p; p="$(command -v "$name" 2>/dev/null || true)"
+    if [ -n "$p" ]; then echo "$p"; return 0; fi
+    for d in $dirs; do
+      if [ -x "$d/$name" ]; then echo "$d/$name"; return 0; fi
+    done
+  done
+  return 1
+}

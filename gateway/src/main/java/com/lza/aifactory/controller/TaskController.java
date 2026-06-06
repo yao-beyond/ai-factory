@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
@@ -172,7 +174,7 @@ public class TaskController {
                 %s
                 <div class="meta">
                   <div>📝 你的需求：%s</div>
-                  <div>🕒 更新時間：%s</div>
+                  <div>🕒 更新時間：%s（UTC+8）</div>
                 </div>
               </div>
             </body>
@@ -189,7 +191,7 @@ public class TaskController {
                 resultBlock(r),
                 etaBlock(r),
                 esc(orDash(r.title())),
-                esc(r.updatedAt() == null ? "—" : r.updatedAt().toString()));
+                esc(formatLocalTime(r.updatedAt())));
     }
 
     /** Friendly "estimated time remaining" line, only while the task is running. */
@@ -267,12 +269,18 @@ public class TaskController {
                 """.formatted(summary, button);
         }
         if (s == TaskStatus.FAILED) {
+            String msg = orDash(r.message());
+            // Surface install hints (e.g. missing AI CLI) directly to the user.
+            boolean isInstallHint = msg.startsWith("請先安裝");
+            String detail = isInstallHint
+                    ? "<p class=\"ask\">" + esc(msg) + "</p>"
+                    : "<p class=\"ask\">需要請工程師看一下。把這個頁面的連結傳給工程師即可，他們能看到技術細節。</p>";
             return """
                 <div class="result bad">
                   <h2>⚠️ 這次沒有順利完成</h2>
-                  <p class="ask">需要請工程師看一下。把這個頁面的連結傳給工程師即可，他們能看到技術細節。</p>
+                  %s
                 </div>
-                """;
+                """.formatted(detail);
         }
         return "";
     }
@@ -318,6 +326,13 @@ public class TaskController {
         }
         if (inList) sb.append("</ul>");
         return sb.append("</div>").toString();
+    }
+
+    private static final DateTimeFormatter LOCAL_TIME =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Taipei"));
+
+    private String formatLocalTime(java.time.Instant t) {
+        return t == null ? "—" : LOCAL_TIME.format(t);
     }
 
     private String orDash(String v) {

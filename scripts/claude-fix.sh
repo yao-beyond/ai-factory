@@ -6,8 +6,9 @@ FINAL_BRANCH="ai/${TASK_ID}/final"
 
 git checkout "$FINAL_BRANCH"
 
-if command -v claude-code >/dev/null 2>&1; then
-  claude-code <<'PROMPT'
+CLAUDE="${CLAUDE_BIN:-$(command -v claude 2>/dev/null || command -v claude-code 2>/dev/null || true)}"
+if [ -n "$CLAUDE" ]; then
+  "$CLAUDE" <<'PROMPT'
 你是 Claude Code 修復工程師。
 
 請根據 docs/ai/CODEX_REVIEW.md 修正問題。

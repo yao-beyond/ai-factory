@@ -91,6 +91,28 @@ set_status() {
 
 trap 'set_status FAILED "stage:${STAGE:-unknown} rc:$?"' ERR
 
+# Auto-detect the AI CLIs (searching PATH + common install dirs). The Claude Code
+# CLI is `claude`; we also accept the older `claude-code` name. If a required CLI
+# is missing, fail early with a plain install hint instead of producing fake output.
+STAGE=preflight
+if command -v aif_find_cli >/dev/null 2>&1 || declare -F aif_find_cli >/dev/null 2>&1; then
+  CODEX_BIN="$(aif_find_cli codex || true)"
+  CLAUDE_BIN="$(aif_find_cli claude claude-code || true)"
+else
+  CODEX_BIN="$(command -v codex || true)"
+  CLAUDE_BIN="$(command -v claude || command -v claude-code || true)"
+fi
+export CODEX_BIN CLAUDE_BIN
+need_install=""
+[ -z "$CODEX_BIN" ]  && need_install="codex CLI（安裝：npm i -g @openai/codex）"
+[ -z "$CLAUDE_BIN" ] && need_install="${need_install:+$need_install；}Claude Code CLI（安裝請見 https://claude.com/claude-code）"
+if [ -n "$need_install" ]; then
+  set_status FAILED "請先安裝：${need_install}"
+  exit 6
+fi
+# Make the resolved CLIs discoverable to child scripts even under a minimal PATH.
+export PATH="$(dirname "$CODEX_BIN"):$(dirname "$CLAUDE_BIN"):$PATH"
+
 mkdir -p "$WORK"
 cd "$WORK"
 
