@@ -139,13 +139,40 @@ public class TaskService {
 
     /** The plain-language change summary the pipeline writes when it finishes. */
     public Optional<String> readSummary(String taskId) {
-        Path f = workDir.resolve(normalizeTaskId(taskId)).resolve("summary.md");
+        return readMarkdown(taskId, "summary.md");
+    }
+
+    /** The plain-language plan summary shown at the pre-flight confirmation gate. */
+    public Optional<String> readPlanSummary(String taskId) {
+        return readMarkdown(taskId, "plan_summary.md");
+    }
+
+    private Optional<String> readMarkdown(String taskId, String name) {
+        Path f = workDir.resolve(normalizeTaskId(taskId)).resolve(name);
         if (!Files.exists(f)) return Optional.empty();
         try {
             String s = Files.readString(f).strip();
             return s.isEmpty() ? Optional.empty() : Optional.of(s);
         } catch (IOException e) {
             return Optional.empty();
+        }
+    }
+
+    /**
+     * Write the approve/cancel marker the waiting pipeline polls for. Atomic
+     * (temp + rename). The bash loop treats cancel as winning over approve.
+     */
+    public void writeConfirmMarker(String taskId, boolean approve) throws IOException {
+        Path dir = workDir.resolve(normalizeTaskId(taskId));
+        String name = approve ? "confirm.approve" : "confirm.cancel";
+        Path target = dir.resolve(name);
+        Path tmp = dir.resolve(name + ".tmp");
+        Files.writeString(tmp, Instant.now().toString() + "\n");
+        try {
+            Files.move(tmp, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
     }
 

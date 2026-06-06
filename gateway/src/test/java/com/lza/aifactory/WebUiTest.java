@@ -100,9 +100,74 @@ class WebUiTest {
         mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
                 .andExpect(status().isOk());
 
-        // The /bin/true pipeline leaves status at SUBMITTED (in progress).
+        // The noop pipeline leaves status at SUBMITTED (in progress).
         mvc.perform(get("/gateway/ui/UAT-ETA"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("預計還要")));
+    }
+
+    private java.nio.file.Path workDir() {
+        return java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "ai-factory-webui-test");
+    }
+
+    private void putAwaitingTask(String id, boolean withPlan) throws Exception {
+        String body = "{\"source\":\"web\",\"externalId\":\"" + id
+                + "\",\"title\":\"待確認需求\",\"description\":\"請做這件事\",\"maxAgents\":1}";
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Path dir = workDir().resolve(id);
+        java.nio.file.Files.createDirectories(dir);
+        java.nio.file.Files.writeString(dir.resolve("status.txt"),
+                "STATUS=AWAITING_CONFIRMATION\nMESSAGE=waiting\nUPDATED_AT=now\n");
+        if (withPlan) {
+            java.nio.file.Files.writeString(dir.resolve("plan_summary.md"),
+                    "# 計畫\n- 在首頁加上聯絡我們連結\n- 預計改動 1 個檔案\n");
+        }
+    }
+
+    @Test
+    void awaitingConfirmationPageShowsPlanAndButtons() throws Exception {
+        putAwaitingTask("UAT-AWAIT", true);
+        mvc.perform(get("/gateway/ui/UAT-AWAIT"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("請先確認開工方向")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("在首頁加上聯絡我們連結")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("確認開工")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("取消")))
+                // ETA must be hidden while waiting on a human.
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("預計還要"))));
+    }
+
+    @Test
+    void confirmWritesApproveMarkerWhenAwaiting() throws Exception {
+        putAwaitingTask("UAT-OK", false);
+        mvc.perform(post("/gateway/confirm/UAT-OK")).andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                java.nio.file.Files.exists(workDir().resolve("UAT-OK").resolve("confirm.approve")));
+    }
+
+    @Test
+    void cancelWritesCancelMarkerWhenAwaiting() throws Exception {
+        putAwaitingTask("UAT-NO", false);
+        mvc.perform(post("/gateway/cancel/UAT-NO")).andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                java.nio.file.Files.exists(workDir().resolve("UAT-NO").resolve("confirm.cancel")));
+    }
+
+    @Test
+    void confirmRejectedWhenNotAwaiting() throws Exception {
+        // A freshly submitted task is SUBMITTED, not AWAITING_CONFIRMATION.
+        String body = """
+                {"source":"web","externalId":"UAT-CONFLICT","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        mvc.perform(post("/gateway/confirm/UAT-CONFLICT")).andExpect(status().isConflict());
+    }
+
+    @Test
+    void confirmUnknownTaskReturns404() throws Exception {
+        mvc.perform(post("/gateway/confirm/__nope__")).andExpect(status().isNotFound());
     }
 }

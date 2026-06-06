@@ -79,6 +79,10 @@ public class AiFactoryProperties {
         private boolean requireHumanMerge = true;
         private boolean draftPullRequests = true;
         private String pullRequestLabel = "ai-generated";
+        // Pre-flight gate: show a plain-language plan and wait for the user to
+        // confirm before the AI starts building.
+        private boolean confirmBeforeBuild = true;
+        private int confirmationTimeoutMinutes = 30;
         public List<String> getAllowRepositories() { return allowRepositories; }
         public void setAllowRepositories(List<String> allowRepositories) { this.allowRepositories = allowRepositories; }
         public List<String> getProtectedBranches() { return protectedBranches; }
@@ -89,6 +93,10 @@ public class AiFactoryProperties {
         public void setDraftPullRequests(boolean draftPullRequests) { this.draftPullRequests = draftPullRequests; }
         public String getPullRequestLabel() { return pullRequestLabel; }
         public void setPullRequestLabel(String pullRequestLabel) { this.pullRequestLabel = pullRequestLabel; }
+        public boolean isConfirmBeforeBuild() { return confirmBeforeBuild; }
+        public void setConfirmBeforeBuild(boolean confirmBeforeBuild) { this.confirmBeforeBuild = confirmBeforeBuild; }
+        public int getConfirmationTimeoutMinutes() { return confirmationTimeoutMinutes; }
+        public void setConfirmationTimeoutMinutes(int m) { this.confirmationTimeoutMinutes = m; }
     }
 
     public static class Secrets {

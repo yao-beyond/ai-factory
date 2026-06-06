@@ -51,6 +51,11 @@ security:
   # Open pull/merge requests as drafts, tagged so they are easy to spot.
   draftPullRequests: true
   pullRequestLabel: ai-generated
+  # Show a plain-language plan and wait for the user to confirm before the AI
+  # starts building. Set false for fully automated / CI use.
+  confirmBeforeBuild: true
+  # How long to wait for that confirmation before failing the task.
+  confirmationTimeoutMinutes: 30
 
 # How secrets are resolved. `env` reads them from environment variables.
 secrets:

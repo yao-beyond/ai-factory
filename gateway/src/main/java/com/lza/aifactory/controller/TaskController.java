@@ -4,15 +4,19 @@ import com.lza.aifactory.dto.TaskRecord;
 import com.lza.aifactory.dto.TaskStatus;
 import com.lza.aifactory.service.EtaService;
 import com.lza.aifactory.service.TaskService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/gateway")
@@ -37,6 +41,38 @@ public class TaskController {
         return taskService.listTasks();
     }
 
+    /** Approve the plan and let the pipeline start building. */
+    @PostMapping("/confirm/{taskId}")
+    public ResponseEntity<?> confirm(@PathVariable String taskId) {
+        return decide(taskId, true);
+    }
+
+    /** Cancel the task while it waits at the confirmation gate. */
+    @PostMapping("/cancel/{taskId}")
+    public ResponseEntity<?> cancel(@PathVariable String taskId) {
+        return decide(taskId, false);
+    }
+
+    private ResponseEntity<?> decide(String taskId, boolean approve) {
+        TaskRecord record = taskService.findStatus(taskId).orElse(null);
+        if (record == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "not_found", "message", "unknown task"));
+        }
+        if (record.status() != TaskStatus.AWAITING_CONFIRMATION) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", "conflict",
+                            "message", "task is not awaiting confirmation (status=" + record.status().name() + ")"));
+        }
+        try {
+            taskService.writeConfirmMarker(taskId, approve);
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "io_error", "message", "could not record decision"));
+        }
+        return ResponseEntity.ok(Map.of("taskId", taskId, "decision", approve ? "approved" : "cancelled"));
+    }
+
     /**
      * Human-friendly status page. Shows a progress bar and plain-language status
      * so non-technical users can follow a task without reading JSON or logs.
@@ -51,10 +87,13 @@ public class TaskController {
 
     private String renderPage(TaskRecord r) {
         TaskStatus s = r.status();
-        boolean done = s == TaskStatus.COMPLETED || s == TaskStatus.FAILED;
         boolean failed = s == TaskStatus.FAILED;
-        String refresh = done ? "" : "<meta http-equiv=\"refresh\" content=\"3\">";
-        String barColor = failed ? "#e5484d" : (s == TaskStatus.COMPLETED ? "#30a46c" : "#3b82f6");
+        boolean awaiting = s == TaskStatus.AWAITING_CONFIRMATION;
+        boolean done = s == TaskStatus.COMPLETED || failed;
+        // Hold still while waiting for the user's decision; auto-refresh otherwise.
+        String refresh = (done || awaiting) ? "" : "<meta http-equiv=\"refresh\" content=\"3\">";
+        String barColor = failed ? "#e5484d"
+                : (s == TaskStatus.COMPLETED ? "#30a46c" : (awaiting ? "#d29922" : "#3b82f6"));
 
         return """
             <!doctype html>
@@ -81,6 +120,12 @@ public class TaskController {
                 .result{margin-top:22px;padding:18px;border-radius:10px;}
                 .result.ok{background:#e9f7ef;border:1px solid #b7ebc9;}
                 .result.bad{background:#fdeceb;border:1px solid #f5c4c2;}
+                .result.await{background:#fff8e6;border:1px solid #f0d999;}
+                .confirm-actions{display:flex;gap:10px;margin:14px 0 4px;}
+                .confirm-actions .btn{flex:1;text-align:center;border:0;border-radius:8px;padding:12px;
+                       font-size:15px;font-weight:600;cursor:pointer;}
+                .btn.ok{background:#1f883d;color:#fff;}
+                .btn.no{background:#eaeef2;color:#3d4248;}
                 .result h2{font-size:16px;margin:0 0 8px;}
                 .result p{font-size:14px;color:#3d4248;margin:6px 0;}
                 .sumtitle{font-weight:600;font-size:14px;margin:10px 0 4px;}
@@ -144,9 +189,33 @@ public class TaskController {
         return "約 " + hours + " 小時";
     }
 
-    /** Plain-language "what now" block shown when the task finishes. */
+    /** Plain-language "what now" block shown when the task finishes (or waits). */
     private String resultBlock(TaskRecord r) {
         TaskStatus s = r.status();
+        if (s == TaskStatus.AWAITING_CONFIRMATION) {
+            String plan = taskService.readPlanSummary(r.taskId())
+                    .map(md -> "<div class=\"sumtitle\">AI 打算這樣做：</div>" + renderSummaryHtml(md))
+                    .orElse("<p>正在整理計畫摘要，稍候重新整理即可看到。</p>");
+            String id = esc(r.taskId());
+            return """
+                <div class="result await">
+                  <h2>📝 請先確認開工方向</h2>
+                  %s
+                  <div class="confirm-actions">
+                    <button class="btn ok" onclick="decide('confirm')">✅ 確認開工</button>
+                    <button class="btn no" onclick="decide('cancel')">❌ 取消</button>
+                  </div>
+                  <p class="ask">確認後 AI 才會開始開發。方向不對就按「取消」，補充需求後重新送出即可。</p>
+                </div>
+                <script>
+                  function decide(a){
+                    fetch('/gateway/'+a+'/%s',{method:'POST'})
+                      .then(r=>{ if(!r.ok){alert('操作失敗，請稍後重試');return;} location.reload(); })
+                      .catch(()=>alert('操作失敗，請稍後重試'));
+                  }
+                </script>
+                """.formatted(plan, id);
+        }
         if (s == TaskStatus.COMPLETED) {
             String button = (r.prUrl() != null && !r.prUrl().isBlank())
                     ? "<a class=\"btn\" href=\"" + esc(r.prUrl()) + "\" target=\"_blank\" rel=\"noopener\">查看 AI 完成的成果草案 →</a>"

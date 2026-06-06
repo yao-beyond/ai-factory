@@ -3,10 +3,12 @@ set -euo pipefail
 
 # Inputs:
 #   $1                : path to issue.json (required)
+#   $2                : path to write the plain-language plan summary (optional)
 #   env TASK_ID       : task id (defaults to dirname of issue.json)
 #   env TARGET_BRANCH : base branch (default: main)
 
 ISSUE_FILE="${1:?issue file required}"
+PLAN_SUMMARY_FILE="${2:-}"
 TASK_ID="${TASK_ID:-$(basename "$(dirname "$ISSUE_FILE")")}"
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
 
@@ -38,6 +40,36 @@ else
 
 Issue: see docs/ai/issue.json
 EOF
+fi
+
+# Produce a plain-language plan summary for the "confirm before build" gate, so a
+# non-technical user can sanity-check the direction before development starts.
+if [ -n "$PLAN_SUMMARY_FILE" ]; then
+  if command -v codex >/dev/null 2>&1; then
+    codex run > "$PLAN_SUMMARY_FILE" <<'PROMPT' || true
+請根據 docs/ai/issue.json 與 docs/ai/IMPLEMENTATION_PLAN.md，用非工程師也看得懂的繁體中文，
+輸出 3–5 點「開工前計畫摘要」。
+
+要求：
+- 每點一句話，條列（以 - 開頭）
+- 說明會改哪些地方、預期結果、主要風險
+- 不要放任何程式碼
+- 不要承諾一定成功
+PROMPT
+  fi
+  # Fallback (no codex, or empty output): derive a friendly summary from the issue.
+  if [ ! -s "$PLAN_SUMMARY_FILE" ]; then
+    title="$(jq -r '.title // "（未命名需求）"' docs/ai/issue.json 2>/dev/null || echo "（未命名需求）")"
+    desc="$(jq -r '.description // ""' docs/ai/issue.json 2>/dev/null || echo "")"
+    {
+      echo "# 開工前計畫摘要"
+      echo
+      echo "- 你的需求：${title}"
+      [ -n "$desc" ] && echo "- 內容：${desc}"
+      echo "- AI 會先建立技術計畫，再進行平行開發、自動審查與修正。"
+      echo "- 若方向不對，請點「取消」補充需求後重新送出。"
+    } > "$PLAN_SUMMARY_FILE"
+  fi
 fi
 
 PLAN_BRANCH="ai/${TASK_ID}/plan"

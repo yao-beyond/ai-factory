@@ -9,6 +9,7 @@ public enum TaskStatus {
     SUBMITTED("📩", "任務已受理", 5),
     RUNNING("⏳", "正在準備程式碼", 10),
     PLANNING("🧠", "正在構思實作方案…", 25),
+    AWAITING_CONFIRMATION("📝", "請確認開工方向", 35),
     DEVELOPING("👩‍💻", "AI 工程師平行開發中", 45),
     SELECTING("🧪", "正在挑選最佳方案", 65),
     MR_CREATED("📬", "已產生成果草案", 75),

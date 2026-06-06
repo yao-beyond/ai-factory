@@ -99,7 +99,34 @@ cp "${BASE}/issue.json" docs/ai/issue.json
 
 STAGE=plan
 set_status PLANNING "running codex-plan"
-bash "${PIPELINE_DIR}/codex-plan.sh" "${BASE}/issue.json"
+bash "${PIPELINE_DIR}/codex-plan.sh" "${BASE}/issue.json" "${BASE}/plan_summary.md"
+
+# Pre-flight confirmation gate: show the plain-language plan and wait for the
+# user to approve before building, so they don't wait through a wrong-direction
+# run. Disable with security.confirmBeforeBuild=false (CONFIRM_BEFORE_BUILD).
+CONFIRM_BEFORE_BUILD="${CONFIRM_BEFORE_BUILD:-true}"
+CONFIRM_TIMEOUT_SECONDS="${CONFIRM_TIMEOUT_SECONDS:-1800}"
+if [ "$CONFIRM_BEFORE_BUILD" = "true" ]; then
+  STAGE=confirm
+  rm -f "${BASE}/confirm.approve" "${BASE}/confirm.cancel"
+  set_status AWAITING_CONFIRMATION "waiting_for_user_confirmation"
+  waited=0
+  while [ "$waited" -lt "$CONFIRM_TIMEOUT_SECONDS" ]; do
+    if [ -f "${BASE}/confirm.cancel" ]; then   # cancel wins over approve
+      set_status FAILED "cancelled_by_user"
+      exit 4
+    fi
+    if [ -f "${BASE}/confirm.approve" ]; then
+      break
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  if [ ! -f "${BASE}/confirm.approve" ]; then
+    set_status FAILED "confirmation_timeout"
+    exit 5
+  fi
+fi
 
 STAGE=dev
 set_status DEVELOPING "spawning ${MAX_AGENTS} dev agents"

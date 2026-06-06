@@ -91,6 +91,9 @@ aif_export_pipeline_env() {
   v="$(aif_cfg security.draftPullRequests)"; [ -n "$v" ] && export PR_DRAFT="${PR_DRAFT:-$v}"
   v="$(aif_cfg security.pullRequestLabel)";  [ -n "$v" ] && export PR_LABEL="${PR_LABEL:-$v}"
   v="$(aif_cfg security.requireHumanMerge)"; [ -n "$v" ] && export REQUIRE_HUMAN_MERGE="${REQUIRE_HUMAN_MERGE:-$v}"
+  v="$(aif_cfg security.confirmBeforeBuild)"; [ -n "$v" ] && export CONFIRM_BEFORE_BUILD="${CONFIRM_BEFORE_BUILD:-$v}"
+  v="$(aif_cfg security.confirmationTimeoutMinutes)"
+  if [ -n "$v" ] && [ -z "${CONFIRM_TIMEOUT_SECONDS:-}" ]; then export CONFIRM_TIMEOUT_SECONDS="$(( v * 60 ))"; fi
   v="$(aif_cfg workspace.mode)";   [ -n "$v" ] && export AI_FACTORY_MODE="${AI_FACTORY_MODE:-$v}"
   # Protected branches as a space-separated list for the push guard.
   local pb; pb="$(aif_cfg_list security.protectedBranches | tr '\n' ' ')"
