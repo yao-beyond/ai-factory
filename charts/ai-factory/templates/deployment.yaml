@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-factory.fullname" . }}
+  labels:
+    {{- include "ai-factory.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ai-factory.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ai-factory.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ .Values.aiFactoryConfig | sha256sum }}
+    spec:
+      containers:
+        - name: gateway
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+          env:
+            - name: AI_FACTORY_CONFIG
+              value: /opt/ai-factory/ai-factory.yml
+            - name: AI_FACTORY_WORK_DIR
+              value: /opt/ai-jobs
+            {{- if .Values.publicBaseUrl }}
+            - name: AI_FACTORY_PUBLIC_BASE_URL
+              value: {{ .Values.publicBaseUrl | quote }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.existingSecret | default (printf "%s-secrets" (include "ai-factory.fullname" .)) }}
+                optional: true
+          volumeMounts:
+            - name: config
+              mountPath: /opt/ai-factory
+              readOnly: true
+            - name: jobs
+              mountPath: /opt/ai-jobs
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "ai-factory.fullname" . }}-config
+        - name: jobs
+        {{- if .Values.workDir.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "ai-factory.fullname" . }}-jobs
+        {{- else }}
+          emptyDir: {}
+        {{- end }}

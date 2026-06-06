@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ai-factory
+description: AI Factory gateway — turn a plain-language request into a reviewed Pull Request.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

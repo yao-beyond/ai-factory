@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ai-factory.fullname" . }}-config
+  labels:
+    {{- include "ai-factory.labels" . | nindent 4 }}
+data:
+  ai-factory.yml: |
+    {{- .Values.aiFactoryConfig | nindent 4 }}

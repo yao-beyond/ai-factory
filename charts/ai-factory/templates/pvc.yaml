@@ -1,0 +1,14 @@
+{{- if .Values.workDir.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ai-factory.fullname" . }}-jobs
+  labels:
+    {{- include "ai-factory.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.workDir.persistence.size }}
+{{- end }}
