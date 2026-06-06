@@ -161,12 +161,20 @@ public class TaskService {
 
     /**
      * Preview is only for new-project (local) results. An existing-repo task also
-     * clones into workspace/repo, so previewing that would expose the private
-     * cloned source. Local mode produces result.zip; existing mode opens a PR and
-     * never does — so the zip's presence is the gate.
+     * clones into workspace/repo, so previewing it would expose the private cloned
+     * source. The mode is read from the authoritative issue.json (written once at
+     * submit) — NOT inferred from sibling artifacts like result.zip, which sit in
+     * the same writable dir and could be stale/forged and bypass the gate.
      */
     private boolean isLocalResult(String taskId) {
-        return resultZip(taskId).isPresent();
+        Path issue = workDir.resolve(normalizeTaskId(taskId)).resolve("issue.json");
+        if (!Files.exists(issue)) return false;
+        try {
+            IssueDto dto = objectMapper.readValue(Files.readString(issue), IssueDto.class);
+            return "new".equalsIgnoreCase(dto.getMode());
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     /**

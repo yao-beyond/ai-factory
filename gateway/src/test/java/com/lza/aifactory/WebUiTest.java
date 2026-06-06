@@ -114,9 +114,13 @@ class WebUiTest {
                 .andExpect(status().isNotFound());
     }
 
-    // Mark a task as a new-project (local) result so preview is allowed.
+    // Mark a task as a new-project (local) result so preview is allowed: the gate
+    // is the authoritative mode in issue.json, not a sibling artifact.
     private void markLocalResult(String id) throws Exception {
-        java.nio.file.Files.write(workDir().resolve(id).resolve("result.zip"), new byte[]{0x50, 0x4b, 0x05, 0x06});
+        java.nio.file.Path dir = workDir().resolve(id);
+        java.nio.file.Files.createDirectories(dir);
+        java.nio.file.Files.writeString(dir.resolve("issue.json"),
+                "{\"source\":\"web\",\"title\":\"t\",\"description\":\"d\",\"mode\":\"new\"}");
     }
 
     @Test
@@ -161,14 +165,19 @@ class WebUiTest {
     }
 
     @Test
-    void previewDeniedForExistingRepoResult() throws Exception {
-        // Existing-repo tasks also clone into workspace/repo, but produce NO result.zip.
-        // Preview must NOT expose that private cloned source.
-        java.nio.file.Path repo = workDir().resolve("UAT-EXISTING").resolve("workspace").resolve("repo");
+    void previewDeniedForExistingRepoEvenWithStaleZip() throws Exception {
+        // Existing-repo tasks also clone into workspace/repo. Preview must NOT expose
+        // that private cloned source — even if a stale result.zip artifact is present,
+        // because the gate is the authoritative mode in issue.json, not the zip.
+        java.nio.file.Path dir = workDir().resolve("UAT-EXISTING");
+        java.nio.file.Path repo = dir.resolve("workspace").resolve("repo");
         java.nio.file.Files.createDirectories(repo);
         java.nio.file.Files.writeString(repo.resolve("index.html"), "<html>private repo</html>");
         java.nio.file.Files.writeString(repo.resolve("secrets.env"), "API_KEY=super-secret");
-        // No result.zip -> not a local result.
+        java.nio.file.Files.writeString(dir.resolve("issue.json"),
+                "{\"source\":\"web\",\"title\":\"t\",\"description\":\"d\",\"mode\":\"existing\"}");
+        // A stale/forged result.zip must NOT bypass the mode gate.
+        java.nio.file.Files.write(dir.resolve("result.zip"), new byte[]{0x50, 0x4b, 0x05, 0x06});
         mvc.perform(get("/gateway/preview/UAT-EXISTING/")).andExpect(status().isNotFound());
         mvc.perform(get("/gateway/preview/UAT-EXISTING/secrets.env")).andExpect(status().isNotFound());
     }
