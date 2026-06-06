@@ -6,6 +6,6 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /workspace
 COPY scripts /opt/ai-pipeline
-RUN chmod +x /opt/ai-pipeline/*.sh
+RUN find /opt/ai-pipeline -name '*.sh' -exec chmod +x {} +
 
 ENTRYPOINT ["/opt/ai-pipeline/run-task.sh"]

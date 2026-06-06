@@ -15,6 +15,10 @@ MAX_AGENTS="${MAX_AGENTS:-3}"
 PLAN_BRANCH="ai/${TASK_ID}/plan"
 BASE_REF="$(git rev-parse --verify "$PLAN_BRANCH" 2>/dev/null || git rev-parse "origin/${TARGET_BRANCH}")"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/git/branch-guard.sh"
+
 choose_default() {
   for i in $(seq 1 "$MAX_AGENTS"); do
     if git rev-parse --verify "ai/${TASK_ID}/dev-${i}" >/dev/null 2>&1; then
@@ -55,6 +59,7 @@ fi
 
 echo "Selected $SOURCE for final"
 git checkout -B "ai/${TASK_ID}/final" "$SOURCE"
+aif_assert_push_allowed "ai/${TASK_ID}/final"
 git push -u origin "ai/${TASK_ID}/final" --force-with-lease
 echo "$CHOSEN" > docs/ai/SELECTED_AGENT.txt
 git add docs/ai/SELECTED_AGENT.txt

@@ -13,6 +13,10 @@ TARGET_BRANCH="${TARGET_BRANCH:-main}"
 PLAN_BRANCH="ai/${TASK_ID}/plan"
 BRANCH="ai/${TASK_ID}/dev-${AGENT_NO}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/git/branch-guard.sh"
+
 # Branch from the plan branch so the dev agent has IMPLEMENTATION_PLAN.md.
 if git rev-parse --verify "$PLAN_BRANCH" >/dev/null 2>&1; then
   git checkout "$PLAN_BRANCH"
@@ -59,4 +63,5 @@ fi
 
 git add -A
 git commit -m "feat(${TASK_ID}): implement candidate ${AGENT_NO}" || true
+aif_assert_push_allowed "$BRANCH"
 git push -u origin "$BRANCH"

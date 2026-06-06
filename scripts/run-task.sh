@@ -11,6 +11,11 @@ BASE="${AI_FACTORY_WORK_DIR:-/opt/ai-jobs}/$TASK_ID"
 WORK="${BASE}/workspace"
 STATUS_FILE="${BASE}/status.txt"
 
+# Where the pipeline scripts live. Defaults to this script's own directory so
+# the pipeline runs unchanged locally, via docker compose, or in the container
+# (scripts are mounted at /opt/ai-pipeline). Override with AI_FACTORY_PIPELINE_DIR.
+PIPELINE_DIR="${AI_FACTORY_PIPELINE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+
 # If the gateway shipped issue.json via env (K8s mode), materialize it on disk.
 if [ ! -f "${BASE}/issue.json" ] && [ -n "${ISSUE_JSON_B64:-}" ]; then
   mkdir -p "$BASE"
@@ -22,12 +27,23 @@ if [ ! -f "${BASE}/issue.json" ]; then
   exit 2
 fi
 
-# Pull config from issue.json (env vars take precedence so K8s/CI can override).
+# Pull config from issue.json first (a per-issue repo override wins).
 if command -v jq >/dev/null 2>&1; then
   REPO_URL="${REPO_URL:-$(jq -r '.repo // empty' "${BASE}/issue.json")}"
-  TARGET_BRANCH="${TARGET_BRANCH:-$(jq -r '.targetBranch // "main"' "${BASE}/issue.json")}"
-  MAX_AGENTS="${MAX_AGENTS:-$(jq -r '.maxAgents // 3' "${BASE}/issue.json")}"
+  TARGET_BRANCH="${TARGET_BRANCH:-$(jq -r '.targetBranch // empty' "${BASE}/issue.json")}"
+  MAX_AGENTS="${MAX_AGENTS:-$(jq -r '.maxAgents // empty' "${BASE}/issue.json")}"
 fi
+
+# Then let ai-factory.yml (if present) fill any gaps and provide
+# provider/draft/label defaults. Env and issue.json values still win.
+if [ -f "${PIPELINE_DIR}/config/load-config.sh" ]; then
+  # shellcheck source=/dev/null
+  source "${PIPELINE_DIR}/config/load-config.sh"
+  if aif_load_config; then
+    aif_export_pipeline_env
+  fi
+fi
+
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
 MAX_AGENTS="${MAX_AGENTS:-3}"
 export TASK_ID TARGET_BRANCH MAX_AGENTS
@@ -39,10 +55,16 @@ if [ -z "${REPO_URL:-}" ]; then
 fi
 export REPO_URL
 
+# PR_URL is captured once the pull/merge request is created and then carried
+# through every subsequent status write so the gateway/UI can surface the link.
+PR_URL=""
 set_status() {
   local status="$1"
   local message="${2:-}"
-  printf 'STATUS=%s\nMESSAGE=%s\nUPDATED_AT=%s\n' "$status" "$message" "$(date -u +%FT%TZ)" > "$STATUS_FILE"
+  {
+    printf 'STATUS=%s\nMESSAGE=%s\nUPDATED_AT=%s\n' "$status" "$message" "$(date -u +%FT%TZ)"
+    [ -n "$PR_URL" ] && printf 'PR_URL=%s\n' "$PR_URL"
+  } > "$STATUS_FILE"
 }
 
 trap 'set_status FAILED "stage:${STAGE:-unknown} rc:$?"' ERR
@@ -65,13 +87,13 @@ cp "${BASE}/issue.json" docs/ai/issue.json
 
 STAGE=plan
 set_status PLANNING "running codex-plan"
-bash /opt/ai-pipeline/codex-plan.sh "${BASE}/issue.json"
+bash "${PIPELINE_DIR}/codex-plan.sh" "${BASE}/issue.json"
 
 STAGE=dev
 set_status DEVELOPING "spawning ${MAX_AGENTS} dev agents"
 pids=()
 for i in $(seq 1 "$MAX_AGENTS"); do
-  bash /opt/ai-pipeline/claude-dev.sh "$TASK_ID" "$i" &
+  bash "${PIPELINE_DIR}/claude-dev.sh" "$TASK_ID" "$i" &
   pids+=("$!")
 done
 fail=0
@@ -85,18 +107,24 @@ fi
 
 STAGE=select
 set_status SELECTING "picking best candidate"
-bash /opt/ai-pipeline/select-best-branch.sh "$TASK_ID"
+bash "${PIPELINE_DIR}/select-best-branch.sh" "$TASK_ID"
 
 STAGE=mr
-set_status MR_CREATED "creating GitLab MR"
-bash /opt/ai-pipeline/git-create-mr.sh "$TASK_ID"
+set_status MR_CREATED "creating pull request"
+bash "${PIPELINE_DIR}/git/create-pr.sh" "$TASK_ID"
+# Surface the PR/MR link to the gateway. Providers use different field names:
+# GitLab=web_url, GitHub=html_url, Bitbucket=.links.html.href.
+if command -v jq >/dev/null 2>&1 && [ -f "/tmp/pr-${TASK_ID}.json" ]; then
+  PR_URL="$(jq -r '.web_url // .html_url // .links.html.href // empty' "/tmp/pr-${TASK_ID}.json" 2>/dev/null || true)"
+fi
+set_status MR_CREATED "pull request ready"
 
 STAGE=review
 set_status REVIEWING "running codex-review"
-bash /opt/ai-pipeline/codex-review.sh "$TASK_ID"
+bash "${PIPELINE_DIR}/codex-review.sh" "$TASK_ID"
 
 STAGE=fix
 set_status FIXING "running claude-fix"
-bash /opt/ai-pipeline/claude-fix.sh "$TASK_ID"
+bash "${PIPELINE_DIR}/claude-fix.sh" "$TASK_ID"
 
 set_status COMPLETED "pipeline finished"
