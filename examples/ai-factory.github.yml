@@ -1,0 +1,32 @@
+# Example: AI Factory targeting a GitHub repository.
+# Tokens stay in the environment — see .env.example.
+version: 1
+
+workspace:
+  workDir: ./.work
+  mode: local
+
+git:
+  provider: github
+  repo: https://github.com/acme/app.git
+  targetBranch: main
+  branchPrefix: ai
+
+agents:
+  maxAgents: 3
+  planner: codex
+  developer: claude
+  reviewer: codex
+
+security:
+  allowRepositories:
+    - https://github.com/acme/*
+  protectedBranches:
+    - main
+    - "release/*"
+  requireHumanMerge: true
+  draftPullRequests: true
+  pullRequestLabel: ai-generated
+
+secrets:
+  provider: env

@@ -1,0 +1,57 @@
+# AI Factory configuration. Copy this file to `ai-factory.yml` and edit, or run
+# `scripts/ai-factory-init.sh` to generate one interactively.
+#
+# Secrets (tokens / API keys) do NOT belong here — keep them in environment
+# variables (or a .env file). This file only references them by name.
+version: 1
+
+workspace:
+  # Where task working directories are created.
+  workDir: ./.work
+  # local  = run the bash pipeline on this machine
+  # docker = run inside docker compose
+  # k8s    = submit a Kubernetes Job per task
+  mode: local
+
+git:
+  # Which platform hosts your repository.
+  provider: github           # github | gitlab | bitbucket
+  # The repository the AI agents will work on.
+  repo: https://github.com/your-org/your-repo.git
+  # The branch pull/merge requests target.
+  targetBranch: main
+  # Branch namespace for AI-generated work. Agents only ever push here.
+  branchPrefix: ai
+
+agents:
+  # How many candidate implementations to generate in parallel.
+  maxAgents: 3
+  planner: codex             # tool that writes the implementation plan
+  developer: claude          # tool that writes the code
+  reviewer: codex            # tool that reviews the result
+
+integrations:
+  jira:
+    enabled: false
+  telegram:
+    enabled: false
+
+security:
+  # Only these repositories may be targeted. Wildcards (*) allowed.
+  # Requests for any other repo are rejected before the pipeline runs.
+  allowRepositories:
+    - https://github.com/your-org/*
+  # Branches the agents must never push to, even if the token allows it.
+  protectedBranches:
+    - main
+    - master
+    - "release/*"
+  # All AI output goes through a pull/merge request a human must approve.
+  requireHumanMerge: true
+  # Open pull/merge requests as drafts, tagged so they are easy to spot.
+  draftPullRequests: true
+  pullRequestLabel: ai-generated
+
+# How secrets are resolved. `env` reads them from environment variables.
+secrets:
+  provider: env              # env | file | kubernetes
