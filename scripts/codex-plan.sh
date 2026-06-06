@@ -19,7 +19,7 @@ cp "$ISSUE_FILE" docs/ai/issue.json
 CODEX="${CODEX_BIN:-$(command -v codex 2>/dev/null || true)}"
 
 if [ -n "$CODEX" ]; then
-  "$CODEX" run > docs/ai/IMPLEMENTATION_PLAN.md <<'PROMPT'
+  "$CODEX" exec --skip-git-repo-check --color never -o docs/ai/IMPLEMENTATION_PLAN.md - <<'PROMPT'
 你是資深交易系統架構師與技術主管。
 
 請根據 docs/ai/issue.json 的需求產生實作計畫，不要直接大量寫程式碼。
@@ -49,7 +49,7 @@ fi
 # non-technical user can sanity-check the direction before development starts.
 if [ -n "$PLAN_SUMMARY_FILE" ]; then
   if [ -n "$CODEX" ]; then
-    "$CODEX" run > "$PLAN_SUMMARY_FILE" <<'PROMPT' || true
+    "$CODEX" exec --skip-git-repo-check --color never -o "$PLAN_SUMMARY_FILE" - <<'PROMPT' || true
 請根據 docs/ai/issue.json 與 docs/ai/IMPLEMENTATION_PLAN.md，用非工程師也看得懂的繁體中文，
 輸出 3–5 點「開工前計畫摘要」。
 

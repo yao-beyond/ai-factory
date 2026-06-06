@@ -41,7 +41,7 @@ esac
 
 CLAUDE="${CLAUDE_BIN:-$(command -v claude 2>/dev/null || command -v claude-code 2>/dev/null || true)}"
 if [ -n "$CLAUDE" ]; then
-  "$CLAUDE" <<PROMPT
+  "$CLAUDE" -p --permission-mode acceptEdits <<PROMPT
 你是 Claude Code 實作工程師。
 
 請依照 docs/ai/IMPLEMENTATION_PLAN.md 開發。

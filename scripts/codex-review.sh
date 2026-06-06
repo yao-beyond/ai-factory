@@ -20,7 +20,7 @@ fi
 mkdir -p docs/ai
 CODEX="${CODEX_BIN:-$(command -v codex 2>/dev/null || true)}"
 if [ -n "$CODEX" ]; then
-  "$CODEX" run > docs/ai/CODEX_REVIEW.md <<'PROMPT'
+  "$CODEX" exec --skip-git-repo-check --color never -o docs/ai/CODEX_REVIEW.md - <<'PROMPT'
 請 review 目前 MR diff（已輸出至 /tmp/diff-*.patch）。
 
 請特別檢查：
