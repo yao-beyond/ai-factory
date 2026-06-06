@@ -1,0 +1,38 @@
+# AI Factory — one-command local run.
+#
+#   1. cp .env.example .env        # then fill in your tokens
+#   2. cp config/ai-factory.example.yml ai-factory.yml   # then edit
+#   3. docker compose up
+#
+# The gateway listens on http://localhost:8080. It runs the bash pipeline
+# in-process (local mode); no Kubernetes required.
+services:
+  gateway:
+    build:
+      context: ./gateway
+    image: ai-factory-gateway:local
+    ports:
+      - "8080:8080"
+    environment:
+      AI_FACTORY_WORK_DIR: /opt/ai-jobs
+      AI_FACTORY_PIPELINE_SCRIPT: /opt/ai-pipeline/run-task.sh
+      AI_FACTORY_CONFIG: /opt/ai-factory/ai-factory.yml
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # Pipeline scripts (includes the git/ provider adapters).
+      - ./scripts:/opt/ai-pipeline:ro
+      # Your configuration file.
+      - ./ai-factory.yml:/opt/ai-factory/ai-factory.yml:ro
+      # Task working directories persist here so you can inspect results.
+      - ai-jobs:/opt/ai-jobs
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ai-jobs:

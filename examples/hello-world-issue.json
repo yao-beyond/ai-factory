@@ -1,0 +1,10 @@
+{
+  "source": "manual",
+  "externalId": "HELLO-1",
+  "title": "Add a friendly hello message to the README",
+  "description": "As a first test of AI Factory, add a short, friendly welcome sentence to the top of the README so we can see the full pipeline run end to end.",
+  "priority": "P3",
+  "labels": ["demo", "good-first-task"],
+  "targetBranch": "main",
+  "maxAgents": 1
+}
