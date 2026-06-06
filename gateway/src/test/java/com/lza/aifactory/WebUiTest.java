@@ -136,6 +136,23 @@ class WebUiTest {
     }
 
     @Test
+    void previewBlocksSymlinkEscape() throws Exception {
+        java.nio.file.Path repo = workDir().resolve("UAT-SYMLINK").resolve("workspace").resolve("repo");
+        java.nio.file.Files.createDirectories(repo);
+        java.nio.file.Files.writeString(repo.resolve("index.html"), "<html>ok</html>");
+        // A secret file OUTSIDE the project, and a symlink inside pointing to it.
+        java.nio.file.Path secret = workDir().resolve("UAT-SYMLINK").resolve("secret.txt");
+        java.nio.file.Files.writeString(secret, "TOP SECRET");
+        try {
+            java.nio.file.Files.createSymbolicLink(repo.resolve("escape.txt"), secret);
+        } catch (Exception e) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "symlinks unsupported here");
+        }
+        mvc.perform(get("/gateway/preview/UAT-SYMLINK/escape.txt"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void completedWebProjectOffersPreviewButton() throws Exception {
         String body = """
                 {"source":"web","mode":"new","externalId":"UAT-WEB","title":"小網站","description":"做一個小網站","maxAgents":1}

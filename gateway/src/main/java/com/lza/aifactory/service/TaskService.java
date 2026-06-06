@@ -159,16 +159,25 @@ public class TaskService {
     }
 
     /**
-     * Resolve a file inside the generated project for preview, with path-traversal
-     * protection. Empty/blank path defaults to index.html.
+     * Resolve a file inside the generated project for preview. Empty/blank path
+     * defaults to index.html. Protects against both lexical traversal ("..") and
+     * symlink escape by comparing the real (symlink-resolved) paths.
      */
     public Optional<Path> resolvePreviewFile(String taskId, String relativePath) {
         Path dir = resultDir(taskId).orElse(null);
         if (dir == null) return Optional.empty();
         String rel = (relativePath == null || relativePath.isBlank()) ? "index.html" : relativePath;
-        Path target = dir.resolve(rel).normalize();
-        if (!target.startsWith(dir) || !Files.isRegularFile(target)) return Optional.empty();
-        return Optional.of(target);
+        try {
+            Path realDir = dir.toRealPath();
+            Path target = realDir.resolve(rel).normalize();
+            if (!Files.isRegularFile(target)) return Optional.empty();
+            // Follow symlinks: the actual file must still live inside the project dir.
+            Path realTarget = target.toRealPath();
+            if (!realTarget.startsWith(realDir)) return Optional.empty();
+            return Optional.of(realTarget);
+        } catch (IOException e) {
+            return Optional.empty();
+        }
     }
 
     /** The plain-language change summary the pipeline writes when it finishes. */
