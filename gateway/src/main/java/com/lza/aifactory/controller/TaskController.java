@@ -83,6 +83,11 @@ public class TaskController {
                 .result.bad{background:#fdeceb;border:1px solid #f5c4c2;}
                 .result h2{font-size:16px;margin:0 0 8px;}
                 .result p{font-size:14px;color:#3d4248;margin:6px 0;}
+                .sumtitle{font-weight:600;font-size:14px;margin:10px 0 4px;}
+                .summary{background:#fff;border:1px solid #cfe9da;border-radius:8px;padding:10px 14px;margin:6px 0 10px;}
+                .summary h4{font-size:14px;margin:8px 0 4px;}
+                .summary ul{margin:4px 0;padding-left:20px;}
+                .summary li,.summary p{font-size:14px;color:#3d4248;margin:3px 0;}
                 .ask{font-size:14px;line-height:1.6;}
                 .btn{display:inline-block;margin:12px 0 4px;background:#1f883d;color:#fff;
                      text-decoration:none;padding:11px 18px;border-radius:8px;font-weight:600;}
@@ -146,14 +151,18 @@ public class TaskController {
             String button = (r.prUrl() != null && !r.prUrl().isBlank())
                     ? "<a class=\"btn\" href=\"" + esc(r.prUrl()) + "\" target=\"_blank\" rel=\"noopener\">查看 AI 完成的成果草案 →</a>"
                     : "<p>成果連結整理中，稍候重新整理即可看到。</p>";
+            String summary = taskService.readSummary(r.taskId())
+                    .map(md -> "<div class=\"sumtitle\">AI 做了這些變更：</div>" + renderSummaryHtml(md))
+                    .orElse("");
             return """
                 <div class="result ok">
                   <h2>✅ AI 已經完成你要求的工作了</h2>
                   %s
+                  %s
                   <p class="ask">下一步：請工程師（或有合併權限的同事）按下「合併」讓變更正式生效。
                   不確定的話，把這個頁面連結傳給工程師就好。AI 不會自己改動正式版本，你可以放心。</p>
                 </div>
-                """.formatted(button);
+                """.formatted(summary, button);
         }
         if (s == TaskStatus.FAILED) {
             return """
@@ -185,6 +194,28 @@ public class TaskController {
         // the meaning. Keep this sub-line empty rather than leak internal text
         // like "spawning 3 dev agents" to non-technical users.
         return "";
+    }
+
+    /** Minimal, safe markdown → HTML for the change summary (headings + bullets). */
+    private String renderSummaryHtml(String md) {
+        StringBuilder sb = new StringBuilder("<div class=\"summary\">");
+        boolean inList = false;
+        for (String raw : md.split("\\R")) {
+            String line = raw.strip();
+            if (line.isEmpty()) continue;
+            if (line.startsWith("#")) {
+                if (inList) { sb.append("</ul>"); inList = false; }
+                sb.append("<h4>").append(esc(line.replaceAll("^#+\\s*", ""))).append("</h4>");
+            } else if (line.startsWith("- ") || line.startsWith("* ")) {
+                if (!inList) { sb.append("<ul>"); inList = true; }
+                sb.append("<li>").append(esc(line.substring(2).strip())).append("</li>");
+            } else {
+                if (inList) { sb.append("</ul>"); inList = false; }
+                sb.append("<p>").append(esc(line)).append("</p>");
+            }
+        }
+        if (inList) sb.append("</ul>");
+        return sb.append("</div>").toString();
     }
 
     private String orDash(String v) {

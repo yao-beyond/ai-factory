@@ -1,5 +1,7 @@
 package com.lza.aifactory.dto;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 
@@ -15,6 +17,8 @@ public class IssueDto {
     private List<String> labels = List.of();
     private String repo;
     private String targetBranch = "main";
+    @Min(1)
+    @Max(10)
     private Integer maxAgents = 3;
 
     public String getSource() { return source; }

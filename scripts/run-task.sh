@@ -46,11 +46,19 @@ fi
 
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
 MAX_AGENTS="${MAX_AGENTS:-3}"
+# Clamp to a sane range so a bad issue.json/env value can't spawn a runaway
+# number of parallel agents and exhaust the machine.
+case "$MAX_AGENTS" in
+  ''|*[!0-9]*) MAX_AGENTS=3 ;;             # non-numeric -> default
+esac
+[ "$MAX_AGENTS" -lt 1 ]  && MAX_AGENTS=1
+[ "$MAX_AGENTS" -gt 10 ] && MAX_AGENTS=10
 export TASK_ID TARGET_BRANCH MAX_AGENTS
 
 if [ -z "${REPO_URL:-}" ]; then
   echo "ERROR: REPO_URL is empty (set REPO_URL env or issue.json .repo to a git URL)" >&2
-  printf 'STATUS=FAILED\nMESSAGE=missing_repo_url\nUPDATED_AT=%s\n' "$(date -u +%FT%TZ)" > "$STATUS_FILE"
+  printf 'STATUS=FAILED\nMESSAGE=missing_repo_url\nUPDATED_AT=%s\n' "$(date -u +%FT%TZ)" > "${STATUS_FILE}.tmp.$$"
+  mv -f "${STATUS_FILE}.tmp.$$" "$STATUS_FILE"
   exit 2
 fi
 export REPO_URL
@@ -61,10 +69,14 @@ PR_URL=""
 set_status() {
   local status="$1"
   local message="${2:-}"
+  # Write to a temp file then atomically rename, so a reader (the gateway) never
+  # sees an empty or half-written status file.
+  local tmp="${STATUS_FILE}.tmp.$$"
   {
     printf 'STATUS=%s\nMESSAGE=%s\nUPDATED_AT=%s\n' "$status" "$message" "$(date -u +%FT%TZ)"
     [ -n "$PR_URL" ] && printf 'PR_URL=%s\n' "$PR_URL"
-  } > "$STATUS_FILE"
+  } > "$tmp"
+  mv -f "$tmp" "$STATUS_FILE"
 }
 
 trap 'set_status FAILED "stage:${STAGE:-unknown} rc:$?"' ERR
@@ -126,5 +138,20 @@ bash "${PIPELINE_DIR}/codex-review.sh" "$TASK_ID"
 STAGE=fix
 set_status FIXING "running claude-fix"
 bash "${PIPELINE_DIR}/claude-fix.sh" "$TASK_ID"
+
+STAGE=summary
+# Assemble a plain-language change summary for the gateway/UI from the artifacts
+# the agents already produced (the winning candidate's summary + the fix summary).
+# Written into BASE so the gateway can read it regardless of working directory.
+{
+  sel="$(cat docs/ai/SELECTED_AGENT.txt 2>/dev/null || true)"
+  if [ -n "${sel:-}" ] && [ -f "docs/ai/CLAUDE_SUMMARY_${sel}.md" ]; then
+    cat "docs/ai/CLAUDE_SUMMARY_${sel}.md"
+  fi
+  if [ -f docs/ai/FIX_SUMMARY.md ]; then
+    printf '\n## 審查修正\n\n'
+    cat docs/ai/FIX_SUMMARY.md
+  fi
+} > "${BASE}/summary.md" 2>/dev/null || true
 
 set_status COMPLETED "pipeline finished"

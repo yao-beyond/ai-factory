@@ -137,6 +137,18 @@ public class TaskService {
         return env;
     }
 
+    /** The plain-language change summary the pipeline writes when it finishes. */
+    public Optional<String> readSummary(String taskId) {
+        Path f = workDir.resolve(normalizeTaskId(taskId)).resolve("summary.md");
+        if (!Files.exists(f)) return Optional.empty();
+        try {
+            String s = Files.readString(f).strip();
+            return s.isEmpty() ? Optional.empty() : Optional.of(s);
+        } catch (IOException e) {
+            return Optional.empty();
+        }
+    }
+
     public Optional<TaskRecord> findStatus(String taskId) {
         TaskRecord record = tasks.get(normalizeTaskId(taskId));
         if (record == null) return Optional.empty();
@@ -182,7 +194,16 @@ public class TaskService {
         String body = "STATUS=" + status.name() + "\n"
                 + "MESSAGE=" + (message == null ? "" : message) + "\n"
                 + "UPDATED_AT=" + Instant.now() + "\n";
-        Files.writeString(taskDir.resolve("status.txt"), body);
+        // Temp file + atomic rename so a concurrent reader never sees a partial file.
+        Path target = taskDir.resolve("status.txt");
+        Path tmp = taskDir.resolve("status.txt.tmp");
+        Files.writeString(tmp, body);
+        try {
+            Files.move(tmp, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     /** Append one JSON line to the task's event log (lightweight audit trail). */

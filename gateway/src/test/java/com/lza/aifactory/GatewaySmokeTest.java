@@ -16,7 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {
         "ai-factory.work-dir=${java.io.tmpdir}/ai-factory-test-work",
-        "ai-factory.pipeline-script=/bin/true",
+        "ai-factory.pipeline-script=${user.dir}/src/test/resources/noop-pipeline.sh",
         "ai-factory.telegram-secret=mysecret"
 })
 class GatewaySmokeTest {
@@ -70,6 +70,16 @@ class GatewaySmokeTest {
     void unknownTaskReturns404() throws Exception {
         mvc.perform(get("/gateway/status/__nope__"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void rejectsExcessiveMaxAgents() throws Exception {
+        String body = """
+                {"source":"web","title":"t","description":"d","maxAgents":99}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("validation_failed"));
     }
 
     @Test
