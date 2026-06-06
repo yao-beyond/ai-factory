@@ -291,7 +291,11 @@ public class TaskController {
             // New-project (local) result: a downloadable project, no git/PR wording.
             // Gate on the authoritative mode, not the result.zip artifact.
             if (taskService.isNewProjectResult(r.taskId())) {
-                String dl = "<a class=\"btn\" href=\"/gateway/result/" + esc(r.taskId()) + "\">⬇️ 下載你的專案（zip）</a>";
+                // Only link the download when the zip really exists, so we never
+                // render a button that 404s.
+                String dl = taskService.resultZip(r.taskId()).isPresent()
+                        ? "<a class=\"btn\" href=\"/gateway/result/" + esc(r.taskId()) + "\">⬇️ 下載你的專案（zip）</a>"
+                        : "<p>成果整理中，稍候重新整理即可下載。</p>";
                 // If it's a web project (has index.html), offer a one-click browser preview.
                 String preview = taskService.hasPreview(r.taskId())
                         ? "<a class=\"btn\" href=\"/gateway/preview/" + esc(r.taskId()) + "/\" target=\"_blank\" rel=\"noopener\">👀 線上預覽成果</a>"

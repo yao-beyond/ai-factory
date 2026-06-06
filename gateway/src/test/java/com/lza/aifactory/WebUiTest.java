@@ -194,6 +194,26 @@ class WebUiTest {
     }
 
     @Test
+    void completedNewProjectWithoutZipShowsNoBrokenDownloadLink() throws Exception {
+        String body = """
+                {"source":"web","mode":"new","externalId":"UAT-NOZIP","title":"全新但無檔","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Path dir = workDir().resolve("UAT-NOZIP");
+        java.nio.file.Files.createDirectories(dir);
+        // COMPLETED, mode=new, but NO result.zip produced.
+        java.nio.file.Files.writeString(dir.resolve("status.txt"), "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=now\n");
+        mvc.perform(get("/gateway/ui/UAT-NOZIP"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("你的全新專案做好了")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("成果整理中")))
+                // No broken download link.
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("href=\"/gateway/result/UAT-NOZIP\""))));
+    }
+
+    @Test
     void completedWebProjectOffersPreviewButton() throws Exception {
         String body = """
                 {"source":"web","mode":"new","externalId":"UAT-WEB","title":"小網站","description":"做一個小網站","maxAgents":1}
