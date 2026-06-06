@@ -39,6 +39,59 @@ class WebUiTest {
     }
 
     @Test
+    void homeFormOffersNewProjectChoice() throws Exception {
+        mvc.perform(get("/"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("做一個全新的東西")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("不需要 git")));
+    }
+
+    @Test
+    void resultDownloadServesZipWhenPresent() throws Exception {
+        String body = """
+                {"source":"web","mode":"new","externalId":"UAT-ZIP","title":"全新小工具","description":"做個東西","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Path dir = workDir().resolve("UAT-ZIP");
+        java.nio.file.Files.createDirectories(dir);
+        java.nio.file.Files.write(dir.resolve("result.zip"), new byte[]{0x50, 0x4b, 0x05, 0x06});
+
+        mvc.perform(get("/gateway/result/UAT-ZIP"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().string("Content-Disposition",
+                                org.hamcrest.Matchers.containsString("ai-factory-UAT-ZIP.zip")));
+    }
+
+    @Test
+    void resultDownloadUnknownReturns404() throws Exception {
+        mvc.perform(get("/gateway/result/__none__")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void localResultPageShowsDownloadNotPullRequest() throws Exception {
+        String body = """
+                {"source":"web","mode":"new","externalId":"UAT-LOCAL","title":"全新需求","description":"做個東西","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Path dir = workDir().resolve("UAT-LOCAL");
+        java.nio.file.Files.createDirectories(dir);
+        java.nio.file.Files.writeString(dir.resolve("status.txt"),
+                "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=now\nRESULT_ZIP=" + dir.resolve("result.zip") + "\n");
+        java.nio.file.Files.write(dir.resolve("result.zip"), new byte[]{0x50, 0x4b, 0x05, 0x06});
+        java.nio.file.Files.writeString(dir.resolve("summary.md"), "# 成果\n- 做了一個小工具\n");
+
+        mvc.perform(get("/gateway/ui/UAT-LOCAL"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("你的全新專案做好了")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("下載你的專案")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("請工程師"))));
+    }
+
+    @Test
     void tasksListPageRenders() throws Exception {
         mvc.perform(get("/gateway/ui"))
                 .andExpect(status().isOk())

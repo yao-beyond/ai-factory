@@ -28,4 +28,5 @@ fi
 
 git add -A
 git commit -m "fix(${TASK_ID}): address Codex review" || true
-git push origin "$FINAL_BRANCH"
+[ "${PROJECT_MODE:-existing}" != "local" ] && git push origin "$FINAL_BRANCH"
+true

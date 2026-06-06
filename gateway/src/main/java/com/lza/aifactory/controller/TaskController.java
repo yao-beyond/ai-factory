@@ -4,6 +4,9 @@ import com.lza.aifactory.dto.TaskRecord;
 import com.lza.aifactory.dto.TaskStatus;
 import com.lza.aifactory.service.EtaService;
 import com.lza.aifactory.service.TaskService;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +43,21 @@ public class TaskController {
     @GetMapping("/tasks")
     public List<TaskRecord> list() {
         return taskService.listTasks();
+    }
+
+    /** Download the generated project (local/new-project mode) as a zip. */
+    @GetMapping("/result/{taskId}")
+    public ResponseEntity<Resource> result(@PathVariable String taskId) {
+        Path zip = taskService.resultZip(taskId).orElse(null);
+        if (zip == null) {
+            return ResponseEntity.notFound().build();
+        }
+        Resource body = new FileSystemResource(zip);
+        String filename = "ai-factory-" + taskId.replaceAll("[^A-Za-z0-9._-]", "-") + ".zip";
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .body(body);
     }
 
     /** Approve the plan and let the pipeline start building. */
@@ -217,12 +236,26 @@ public class TaskController {
                 """.formatted(plan, id);
         }
         if (s == TaskStatus.COMPLETED) {
-            String button = (r.prUrl() != null && !r.prUrl().isBlank())
-                    ? "<a class=\"btn\" href=\"" + esc(r.prUrl()) + "\" target=\"_blank\" rel=\"noopener\">查看 AI 完成的成果草案 →</a>"
-                    : "<p>成果連結整理中，稍候重新整理即可看到。</p>";
             String summary = taskService.readSummary(r.taskId())
                     .map(md -> "<div class=\"sumtitle\">AI 做了這些變更：</div>" + renderSummaryHtml(md))
                     .orElse("");
+            // New-project (local) result: a downloadable project, no git/PR wording.
+            if (taskService.resultZip(r.taskId()).isPresent()) {
+                String dl = "<a class=\"btn\" href=\"/gateway/result/" + esc(r.taskId()) + "\">⬇️ 下載你的專案（zip）</a>";
+                return """
+                    <div class="result ok">
+                      <h2>✅ 你的全新專案做好了</h2>
+                      %s
+                      %s
+                      <p class="ask">這是一個可下載的專案壓縮檔。想實際上線或進一步調整，把它交給工程師、
+                      或之後用「線上發布」功能即可。</p>
+                    </div>
+                    """.formatted(summary, dl);
+            }
+            // Existing-repo result: a reviewable pull request.
+            String button = (r.prUrl() != null && !r.prUrl().isBlank())
+                    ? "<a class=\"btn\" href=\"" + esc(r.prUrl()) + "\" target=\"_blank\" rel=\"noopener\">查看 AI 完成的成果草案 →</a>"
+                    : "<p>成果連結整理中，稍候重新整理即可看到。</p>";
             return """
                 <div class="result ok">
                   <h2>✅ AI 已經完成你要求的工作了</h2>

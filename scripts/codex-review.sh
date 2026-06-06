@@ -3,11 +3,19 @@ set -euo pipefail
 
 TASK_ID="${1:?TASK_ID required}"
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
+PLAN_BRANCH="ai/${TASK_ID}/plan"
 FINAL_BRANCH="ai/${TASK_ID}/final"
 
-git fetch origin "$TARGET_BRANCH"
 git checkout "$FINAL_BRANCH"
-git diff "origin/${TARGET_BRANCH}...$FINAL_BRANCH" > "/tmp/diff-${TASK_ID}.patch"
+if [ "${PROJECT_MODE:-existing}" = "local" ]; then
+  # No remote in local mode: diff the final against the plan (or target) branch.
+  DIFF_BASE="$PLAN_BRANCH"
+  git rev-parse --verify "$DIFF_BASE" >/dev/null 2>&1 || DIFF_BASE="$TARGET_BRANCH"
+  git diff "${DIFF_BASE}...$FINAL_BRANCH" > "/tmp/diff-${TASK_ID}.patch"
+else
+  git fetch origin "$TARGET_BRANCH"
+  git diff "origin/${TARGET_BRANCH}...$FINAL_BRANCH" > "/tmp/diff-${TASK_ID}.patch"
+fi
 
 mkdir -p docs/ai
 if command -v codex >/dev/null 2>&1; then
@@ -30,4 +38,5 @@ fi
 
 git add docs/ai/CODEX_REVIEW.md
 git commit -m "review(${TASK_ID}): add Codex review" || true
-git push origin "$FINAL_BRANCH"
+[ "${PROJECT_MODE:-existing}" != "local" ] && git push origin "$FINAL_BRANCH"
+true

@@ -134,7 +134,17 @@ public class TaskService {
         if (dto.getPriority() != null) {
             env.put("ISSUE_PRIORITY", dto.getPriority());
         }
+        // Brand-new project: run in local scratch mode (no clone/push/PR/token).
+        if ("new".equalsIgnoreCase(dto.getMode())) {
+            env.put("PROJECT_MODE", "local");
+        }
         return env;
+    }
+
+    /** Path to the downloadable result zip a local-mode task produces, if present. */
+    public Optional<Path> resultZip(String taskId) {
+        Path f = workDir.resolve(normalizeTaskId(taskId)).resolve("result.zip");
+        return Files.exists(f) ? Optional.of(f) : Optional.empty();
     }
 
     /** The plain-language change summary the pipeline writes when it finishes. */

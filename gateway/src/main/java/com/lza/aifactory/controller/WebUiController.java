@@ -47,11 +47,12 @@ public class WebUiController {
                       border:1px solid #d0d7de;border-radius:8px;font-size:15px;font-family:inherit;}
                 textarea{min-height:120px;resize:vertical;}
                 .hint{color:#8b949e;font-size:12px;margin-top:4px;}
-                .strength{display:flex;gap:8px;margin-top:6px;}
-                .strength label{flex:1;font-weight:500;border:1px solid #d0d7de;border-radius:8px;
+                .strength,.mode{display:flex;gap:8px;margin-top:6px;}
+                .strength label,.mode label{flex:1;font-weight:500;border:1px solid #d0d7de;border-radius:8px;
                       padding:10px;text-align:center;cursor:pointer;margin:0;}
-                .strength input{display:none;}
-                .strength input:checked + span{font-weight:700;color:#0969da;}
+                .strength input,.mode input{display:none;}
+                .strength input:checked + span,.mode input:checked + span{font-weight:700;color:#0969da;}
+                .mode label{padding:12px;}
                 button{margin-top:24px;width:100%;background:#1f883d;color:#fff;border:0;border-radius:8px;
                       padding:13px;font-size:16px;font-weight:600;cursor:pointer;}
                 button:hover{background:#1a7f37;}
@@ -66,6 +67,13 @@ public class WebUiController {
                 <h1>請 AI Factory 幫你做一件事</h1>
                 <p class="sub">嗨，我是粉圓 🫧 用白話描述你要什麼就好，不需要懂程式。完成後會給你一個可審查的成果。</p>
                 <form id="f" onsubmit="return submitForm(event)">
+                  <label>你想做什麼？</label>
+                  <div class="mode">
+                    <label><input type="radio" name="mode" value="new" checked><span>✨ 做一個全新的東西</span></label>
+                    <label><input type="radio" name="mode" value="existing"><span>🔧 改現有的專案</span></label>
+                  </div>
+                  <div class="hint">全新專案不需要 git 帳號或金鑰，完成後直接給你可下載的成果。</div>
+
                   <label for="title">標題</label>
                   <input type="text" id="title" required placeholder="例如：結帳頁面加上儲存常用地址">
                   <div class="hint">一句話講清楚要做什麼。</div>
@@ -93,6 +101,7 @@ public class WebUiController {
                   err.style.display='none';
                   const body = {
                     source: "web",
+                    mode: document.querySelector('input[name=mode]:checked').value,
                     title: document.getElementById('title').value,
                     description: document.getElementById('description').value,
                     maxAgents: parseInt(document.querySelector('input[name=strength]:checked').value, 10)

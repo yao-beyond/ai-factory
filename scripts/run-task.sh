@@ -53,19 +53,28 @@ case "$MAX_AGENTS" in
 esac
 [ "$MAX_AGENTS" -lt 1 ]  && MAX_AGENTS=1
 [ "$MAX_AGENTS" -gt 10 ] && MAX_AGENTS=10
-export TASK_ID TARGET_BRANCH MAX_AGENTS
 
-if [ -z "${REPO_URL:-}" ]; then
+# Project mode: "local" generates a brand-new project in a scratch repo with no
+# remote, no clone, no pull request, no token — for users who only have an idea.
+# "existing" (default) clones REPO_URL and opens a PR/MR as before.
+PROJECT_MODE="${PROJECT_MODE:-existing}"
+if [ "${GIT_PROVIDER:-}" = "local" ]; then PROJECT_MODE="local"; fi
+LOCAL_MODE=false
+[ "$PROJECT_MODE" = "local" ] && LOCAL_MODE=true
+export TASK_ID TARGET_BRANCH MAX_AGENTS PROJECT_MODE
+
+if [ "$LOCAL_MODE" = false ] && [ -z "${REPO_URL:-}" ]; then
   echo "ERROR: REPO_URL is empty (set REPO_URL env or issue.json .repo to a git URL)" >&2
   printf 'STATUS=FAILED\nMESSAGE=missing_repo_url\nUPDATED_AT=%s\n' "$(date -u +%FT%TZ)" > "${STATUS_FILE}.tmp.$$"
   mv -f "${STATUS_FILE}.tmp.$$" "$STATUS_FILE"
   exit 2
 fi
-export REPO_URL
+export REPO_URL="${REPO_URL:-}"
 
 # PR_URL is captured once the pull/merge request is created and then carried
 # through every subsequent status write so the gateway/UI can surface the link.
 PR_URL=""
+RESULT_ZIP=""
 set_status() {
   local status="$1"
   local message="${2:-}"
@@ -75,6 +84,7 @@ set_status() {
   {
     printf 'STATUS=%s\nMESSAGE=%s\nUPDATED_AT=%s\n' "$status" "$message" "$(date -u +%FT%TZ)"
     [ -n "$PR_URL" ] && printf 'PR_URL=%s\n' "$PR_URL"
+    [ -n "$RESULT_ZIP" ] && printf 'RESULT_ZIP=%s\n' "$RESULT_ZIP"
   } > "$tmp"
   mv -f "$tmp" "$STATUS_FILE"
 }
@@ -85,14 +95,29 @@ mkdir -p "$WORK"
 cd "$WORK"
 
 STAGE=clone
-set_status RUNNING "cloning $REPO_URL"
-if [ ! -d repo/.git ]; then
-  git clone "$REPO_URL" repo
+if [ "$LOCAL_MODE" = true ]; then
+  # Brand-new project: initialise a private scratch repo (git is used internally
+  # only; the user never needs an account, token, or remote).
+  set_status RUNNING "preparing a new project"
+  if [ ! -d repo/.git ]; then
+    git init -b "$TARGET_BRANCH" repo
+    cd repo
+    git config user.email "ai-factory@localhost"
+    git config user.name "AI Factory"
+    git commit --allow-empty -m "chore: initialize new project" >/dev/null
+  else
+    cd repo
+  fi
+else
+  set_status RUNNING "cloning $REPO_URL"
+  if [ ! -d repo/.git ]; then
+    git clone "$REPO_URL" repo
+  fi
+  cd repo
+  git fetch origin
+  git checkout "$TARGET_BRANCH"
+  git pull origin "$TARGET_BRANCH"
 fi
-cd repo
-git fetch origin
-git checkout "$TARGET_BRANCH"
-git pull origin "$TARGET_BRANCH"
 
 mkdir -p docs/ai
 cp "${BASE}/issue.json" docs/ai/issue.json
@@ -148,15 +173,17 @@ STAGE=select
 set_status SELECTING "picking best candidate"
 bash "${PIPELINE_DIR}/select-best-branch.sh" "$TASK_ID"
 
-STAGE=mr
-set_status MR_CREATED "creating pull request"
-bash "${PIPELINE_DIR}/git/create-pr.sh" "$TASK_ID"
-# Surface the PR/MR link to the gateway. Providers use different field names:
-# GitLab=web_url, GitHub=html_url, Bitbucket=.links.html.href.
-if command -v jq >/dev/null 2>&1 && [ -f "/tmp/pr-${TASK_ID}.json" ]; then
-  PR_URL="$(jq -r '.web_url // .html_url // .links.html.href // empty' "/tmp/pr-${TASK_ID}.json" 2>/dev/null || true)"
+if [ "$LOCAL_MODE" = false ]; then
+  STAGE=mr
+  set_status MR_CREATED "creating pull request"
+  bash "${PIPELINE_DIR}/git/create-pr.sh" "$TASK_ID"
+  # Surface the PR/MR link to the gateway. Providers use different field names:
+  # GitLab=web_url, GitHub=html_url, Bitbucket=.links.html.href.
+  if command -v jq >/dev/null 2>&1 && [ -f "/tmp/pr-${TASK_ID}.json" ]; then
+    PR_URL="$(jq -r '.web_url // .html_url // .links.html.href // empty' "/tmp/pr-${TASK_ID}.json" 2>/dev/null || true)"
+  fi
+  set_status MR_CREATED "pull request ready"
 fi
-set_status MR_CREATED "pull request ready"
 
 STAGE=review
 set_status REVIEWING "running codex-review"
@@ -180,5 +207,24 @@ STAGE=summary
     cat docs/ai/FIX_SUMMARY.md
   fi
 } > "${BASE}/summary.md" 2>/dev/null || true
+
+# In local mode there is no PR to point at, so package the generated project as a
+# downloadable zip (excluding the internal .git folder) for the gateway to serve.
+if [ "$LOCAL_MODE" = true ]; then
+  STAGE=package
+  # Make sure the selected result is checked out.
+  if git rev-parse --verify "ai/${TASK_ID}/final" >/dev/null 2>&1; then
+    git checkout "ai/${TASK_ID}/final" >/dev/null 2>&1 || true
+  fi
+  ZIP_PATH="${BASE}/result.zip"
+  rm -f "$ZIP_PATH"
+  if command -v zip >/dev/null 2>&1; then
+    zip -rq "$ZIP_PATH" . -x '.git/*' -x './.git/*' || true
+  else
+    # Fallback: tar.gz named .zip is unhelpful; use git archive (no .git included).
+    git archive --format=zip -o "$ZIP_PATH" HEAD 2>/dev/null || true
+  fi
+  [ -f "$ZIP_PATH" ] && RESULT_ZIP="$ZIP_PATH"
+fi
 
 set_status COMPLETED "pipeline finished"

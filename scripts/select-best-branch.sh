@@ -13,7 +13,15 @@ TASK_ID="${1:?TASK_ID required}"
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
 MAX_AGENTS="${MAX_AGENTS:-3}"
 PLAN_BRANCH="ai/${TASK_ID}/plan"
-BASE_REF="$(git rev-parse --verify "$PLAN_BRANCH" 2>/dev/null || git rev-parse "origin/${TARGET_BRANCH}")"
+# Diff base: the plan branch if present, else the target branch. In local mode
+# there is no origin, so never fall back to origin/<branch>.
+if git rev-parse --verify "$PLAN_BRANCH" >/dev/null 2>&1; then
+  BASE_REF="$(git rev-parse "$PLAN_BRANCH")"
+elif [ "${PROJECT_MODE:-existing}" = "local" ]; then
+  BASE_REF="$(git rev-parse "$TARGET_BRANCH")"
+else
+  BASE_REF="$(git rev-parse "origin/${TARGET_BRANCH}")"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -59,9 +67,11 @@ fi
 
 echo "Selected $SOURCE for final"
 git checkout -B "ai/${TASK_ID}/final" "$SOURCE"
-aif_assert_push_allowed "ai/${TASK_ID}/final"
-git push -u origin "ai/${TASK_ID}/final" --force-with-lease
 echo "$CHOSEN" > docs/ai/SELECTED_AGENT.txt
 git add docs/ai/SELECTED_AGENT.txt
 git commit -m "chore(${TASK_ID}): select dev-${CHOSEN} as final" || true
-git push
+if [ "${PROJECT_MODE:-existing}" != "local" ]; then
+  aif_assert_push_allowed "ai/${TASK_ID}/final"
+  git push -u origin "ai/${TASK_ID}/final" --force-with-lease
+  git push
+fi

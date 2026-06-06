@@ -17,6 +17,9 @@ public class IssueDto {
     private List<String> labels = List.of();
     private String repo;
     private String targetBranch = "main";
+    // "existing" (default) works on an existing repo and opens a PR.
+    // "new" generates a brand-new project locally — no git account/token needed.
+    private String mode = "existing";
     @Min(1)
     @Max(10)
     private Integer maxAgents = 3;
@@ -37,6 +40,8 @@ public class IssueDto {
     public void setRepo(String repo) { this.repo = repo; }
     public String getTargetBranch() { return targetBranch; }
     public void setTargetBranch(String targetBranch) { this.targetBranch = targetBranch; }
+    public String getMode() { return mode; }
+    public void setMode(String mode) { this.mode = mode; }
     public Integer getMaxAgents() { return maxAgents; }
     public void setMaxAgents(Integer maxAgents) { this.maxAgents = maxAgents; }
 }

@@ -63,5 +63,7 @@ fi
 
 git add -A
 git commit -m "feat(${TASK_ID}): implement candidate ${AGENT_NO}" || true
-aif_assert_push_allowed "$BRANCH"
-git push -u origin "$BRANCH"
+if [ "${PROJECT_MODE:-existing}" != "local" ]; then
+  aif_assert_push_allowed "$BRANCH"
+  git push -u origin "$BRANCH"
+fi
