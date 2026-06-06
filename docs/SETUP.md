@@ -60,12 +60,21 @@ docker compose up
 
 ### 方式 B：本機 Java
 
+請用**環境變數**傳這些設定（不要用 `-Dspring-boot.run.jvmArguments` 的 `-D`）。
+原因：`-D` 只設 JVM 系統屬性，gateway 自己讀得到，但它啟動的 pipeline 子程序
+（`run-task.sh`）是讀**環境變數**的——用 `-D` 會讓子程序找不到 work dir 而失敗。
+
 ```bash
 cd gateway
-./mvnw spring-boot:run \
-  -Dspring-boot.run.jvmArguments="\
-    -DAI_FACTORY_WORK_DIR=$(pwd)/../.work \
-    -DAI_FACTORY_PIPELINE_SCRIPT=$(pwd)/../scripts/run-task.sh"
+export AI_FACTORY_WORK_DIR="$(pwd)/../.work"
+export AI_FACTORY_PIPELINE_SCRIPT="$(pwd)/../scripts/run-task.sh"
+./mvnw spring-boot:run
+```
+
+需要換埠（例如 8080 已被占用）時：
+
+```bash
+./mvnw spring-boot:run -Dspring-boot.run.arguments="--server.port=8081"
 ```
 
 ### 方式 C：Kubernetes（正式多租戶）
