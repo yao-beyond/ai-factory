@@ -38,8 +38,10 @@ public class WebUiController {
                      background:#f6f8fa;color:#1f2328;margin:0;padding:40px 16px;}
                 .card{max-width:600px;margin:0 auto;background:#fff;border:1px solid #d0d7de;
                       border-radius:14px;padding:28px 32px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
-                h1{font-size:22px;margin:0 0 4px;}
-                .sub{color:#656d76;font-size:14px;margin:0 0 22px;}
+                .mascot{display:block;margin:0 auto 12px;width:96px;height:96px;border-radius:50%;
+                        object-fit:cover;border:3px solid #eaeef2;}
+                h1{font-size:22px;margin:0 0 4px;text-align:center;}
+                .sub{color:#656d76;font-size:14px;margin:0 0 22px;text-align:center;}
                 label{display:block;font-weight:600;margin:16px 0 6px;font-size:14px;}
                 input[type=text],textarea{width:100%;box-sizing:border-box;padding:10px 12px;
                       border:1px solid #d0d7de;border-radius:8px;font-size:15px;font-family:inherit;}
@@ -60,8 +62,9 @@ public class WebUiController {
             </head>
             <body>
               <div class="card">
+                <img class="mascot" src="/mascot.jpg" alt="AI Factory 吉祥物 粉圓">
                 <h1>請 AI Factory 幫你做一件事</h1>
-                <p class="sub">用白話描述你要什麼就好，不需要懂程式。完成後會給你一個可審查的 Pull Request。</p>
+                <p class="sub">嗨，我是粉圓 🫧 用白話描述你要什麼就好，不需要懂程式。完成後會給你一個可審查的成果。</p>
                 <form id="f" onsubmit="return submitForm(event)">
                   <label for="title">標題</label>
                   <input type="text" id="title" required placeholder="例如：結帳頁面加上儲存常用地址">
