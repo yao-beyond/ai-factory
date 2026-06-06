@@ -231,7 +231,9 @@ STAGE=summary
 } > "${BASE}/summary.md" 2>/dev/null || true
 
 # In local mode there is no PR to point at, so package the generated project as a
-# downloadable zip (excluding the internal .git folder) for the gateway to serve.
+# downloadable zip for the gateway to serve. Exclude internal/tooling artifacts
+# (.git, .omc agent state, docs/ai pipeline metadata) so the deliverable only
+# contains the actual project.
 if [ "$LOCAL_MODE" = true ]; then
   STAGE=package
   # Make sure the selected result is checked out.
@@ -241,10 +243,14 @@ if [ "$LOCAL_MODE" = true ]; then
   ZIP_PATH="${BASE}/result.zip"
   rm -f "$ZIP_PATH"
   if command -v zip >/dev/null 2>&1; then
-    zip -rq "$ZIP_PATH" . -x '.git/*' -x './.git/*' || true
+    zip -rq "$ZIP_PATH" . \
+      -x '.git/*' './.git/*' \
+      -x '.omc/*' './.omc/*' \
+      -x 'docs/ai/*' './docs/ai/*' || true
   else
-    # Fallback: tar.gz named .zip is unhelpful; use git archive (no .git included).
-    git archive --format=zip -o "$ZIP_PATH" HEAD 2>/dev/null || true
+    # Fallback: git archive only includes tracked files (no .git/.omc); also drop
+    # the pipeline's docs/ai metadata.
+    git archive --format=zip -o "$ZIP_PATH" HEAD -- . ':(exclude)docs/ai' 2>/dev/null || true
   fi
   [ -f "$ZIP_PATH" ] && RESULT_ZIP="$ZIP_PATH"
 fi
