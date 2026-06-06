@@ -4,6 +4,7 @@ import com.lza.aifactory.dto.TaskRecord;
 import com.lza.aifactory.dto.TaskStatus;
 import com.lza.aifactory.service.EtaService;
 import com.lza.aifactory.service.TaskService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.ZoneId;
@@ -60,6 +62,46 @@ public class TaskController {
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .body(body);
+    }
+
+    /**
+     * Browser preview of a generated web project (local/new-project mode), so a
+     * non-technical user can just look at the result without any dev environment.
+     * Serves files from the project tree (index.html by default), read-only and
+     * protected against path traversal.
+     */
+    @GetMapping("/preview/{taskId}/**")
+    public ResponseEntity<Resource> preview(@PathVariable String taskId, HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        String prefix = "/gateway/preview/" + taskId;
+        String rel = uri.length() > prefix.length() ? uri.substring(prefix.length()) : "";
+        rel = java.net.URLDecoder.decode(rel, java.nio.charset.StandardCharsets.UTF_8).replaceFirst("^/+", "");
+        Path file = taskService.resolvePreviewFile(taskId, rel).orElse(null);
+        if (file == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(guessContentType(file)))
+                .body(new FileSystemResource(file));
+    }
+
+    private String guessContentType(Path file) {
+        String name = file.getFileName().toString().toLowerCase();
+        if (name.endsWith(".html") || name.endsWith(".htm")) return "text/html; charset=utf-8";
+        if (name.endsWith(".css")) return "text/css; charset=utf-8";
+        if (name.endsWith(".js") || name.endsWith(".mjs")) return "application/javascript; charset=utf-8";
+        if (name.endsWith(".json")) return "application/json; charset=utf-8";
+        if (name.endsWith(".svg")) return "image/svg+xml";
+        if (name.endsWith(".png")) return "image/png";
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+        if (name.endsWith(".gif")) return "image/gif";
+        if (name.endsWith(".ico")) return "image/x-icon";
+        try {
+            String probed = Files.probeContentType(file);
+            if (probed != null) return probed;
+        } catch (IOException ignored) {
+        }
+        return "text/plain; charset=utf-8";
     }
 
     /** Approve the plan and let the pipeline start building. */
@@ -244,15 +286,20 @@ public class TaskController {
             // New-project (local) result: a downloadable project, no git/PR wording.
             if (taskService.resultZip(r.taskId()).isPresent()) {
                 String dl = "<a class=\"btn\" href=\"/gateway/result/" + esc(r.taskId()) + "\">⬇️ 下載你的專案（zip）</a>";
+                // If it's a web project (has index.html), offer a one-click browser preview.
+                String preview = taskService.hasPreview(r.taskId())
+                        ? "<a class=\"btn\" href=\"/gateway/preview/" + esc(r.taskId()) + "/\" target=\"_blank\" rel=\"noopener\">👀 線上預覽成果</a>"
+                        : "";
                 return """
                     <div class="result ok">
                       <h2>✅ 你的全新專案做好了</h2>
                       %s
                       %s
-                      <p class="ask">這是一個可下載的專案壓縮檔。想實際上線或進一步調整，把它交給工程師、
-                      或之後用「線上發布」功能即可。</p>
+                      %s
+                      <p class="ask">%s想保留或進一步調整，下載 zip 後交給工程師、或之後用「線上發布」功能即可。</p>
                     </div>
-                    """.formatted(summary, dl);
+                    """.formatted(summary, preview, dl,
+                        preview.isEmpty() ? "" : "點「線上預覽」就能直接在瀏覽器看成果。");
             }
             // Existing-repo result: a reviewable pull request.
             String button = (r.prUrl() != null && !r.prUrl().isBlank())

@@ -147,6 +147,30 @@ public class TaskService {
         return Files.exists(f) ? Optional.of(f) : Optional.empty();
     }
 
+    /** The generated project's working tree (local mode), if present. */
+    public Optional<Path> resultDir(String taskId) {
+        Path d = workDir.resolve(normalizeTaskId(taskId)).resolve("workspace").resolve("repo");
+        return Files.isDirectory(d) ? Optional.of(d.normalize()) : Optional.empty();
+    }
+
+    /** True when the generated project has an index.html that can be previewed in a browser. */
+    public boolean hasPreview(String taskId) {
+        return resultDir(taskId).map(d -> Files.isRegularFile(d.resolve("index.html"))).orElse(false);
+    }
+
+    /**
+     * Resolve a file inside the generated project for preview, with path-traversal
+     * protection. Empty/blank path defaults to index.html.
+     */
+    public Optional<Path> resolvePreviewFile(String taskId, String relativePath) {
+        Path dir = resultDir(taskId).orElse(null);
+        if (dir == null) return Optional.empty();
+        String rel = (relativePath == null || relativePath.isBlank()) ? "index.html" : relativePath;
+        Path target = dir.resolve(rel).normalize();
+        if (!target.startsWith(dir) || !Files.isRegularFile(target)) return Optional.empty();
+        return Optional.of(target);
+    }
+
     /** The plain-language change summary the pipeline writes when it finishes. */
     public Optional<String> readSummary(String taskId) {
         return readMarkdown(taskId, "summary.md");

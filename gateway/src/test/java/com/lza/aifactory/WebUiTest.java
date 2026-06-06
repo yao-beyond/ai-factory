@@ -115,6 +115,45 @@ class WebUiTest {
     }
 
     @Test
+    void previewServesGeneratedIndexHtml() throws Exception {
+        java.nio.file.Path repo = workDir().resolve("UAT-PREVIEW").resolve("workspace").resolve("repo");
+        java.nio.file.Files.createDirectories(repo);
+        java.nio.file.Files.writeString(repo.resolve("index.html"),
+                "<!doctype html><html><body><h1>我的待辦清單</h1></body></html>");
+        mvc.perform(get("/gateway/preview/UAT-PREVIEW/"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("text/html"))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("我的待辦清單")));
+    }
+
+    @Test
+    void previewBlocksPathTraversal() throws Exception {
+        java.nio.file.Path repo = workDir().resolve("UAT-TRAVERSAL").resolve("workspace").resolve("repo");
+        java.nio.file.Files.createDirectories(repo);
+        java.nio.file.Files.writeString(repo.resolve("index.html"), "<html>ok</html>");
+        mvc.perform(get("/gateway/preview/UAT-TRAVERSAL/../../../../etc/hosts"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void completedWebProjectOffersPreviewButton() throws Exception {
+        String body = """
+                {"source":"web","mode":"new","externalId":"UAT-WEB","title":"小網站","description":"做一個小網站","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Path dir = workDir().resolve("UAT-WEB");
+        java.nio.file.Files.createDirectories(dir.resolve("workspace").resolve("repo"));
+        java.nio.file.Files.writeString(dir.resolve("status.txt"), "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=now\n");
+        java.nio.file.Files.write(dir.resolve("result.zip"), new byte[]{0x50, 0x4b, 0x05, 0x06});
+        java.nio.file.Files.writeString(dir.resolve("workspace").resolve("repo").resolve("index.html"), "<html>hi</html>");
+        mvc.perform(get("/gateway/ui/UAT-WEB"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("線上預覽成果")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("下載你的專案")));
+    }
+
+    @Test
     void completedPageShowsPlainLanguageResultAndPrLink() throws Exception {
         // Submit a task with a known id, then simulate the pipeline finishing with
         // a PR link, and assert the page speaks human (Gemini UAT must-fixes).
