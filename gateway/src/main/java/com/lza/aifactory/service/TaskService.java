@@ -155,15 +155,28 @@ public class TaskService {
 
     /** True when the generated project has an index.html that can be previewed in a browser. */
     public boolean hasPreview(String taskId) {
+        if (!isLocalResult(taskId)) return false;
         return resultDir(taskId).map(d -> Files.isRegularFile(d.resolve("index.html"))).orElse(false);
+    }
+
+    /**
+     * Preview is only for new-project (local) results. An existing-repo task also
+     * clones into workspace/repo, so previewing that would expose the private
+     * cloned source. Local mode produces result.zip; existing mode opens a PR and
+     * never does — so the zip's presence is the gate.
+     */
+    private boolean isLocalResult(String taskId) {
+        return resultZip(taskId).isPresent();
     }
 
     /**
      * Resolve a file inside the generated project for preview. Empty/blank path
      * defaults to index.html. Protects against both lexical traversal ("..") and
-     * symlink escape by comparing the real (symlink-resolved) paths.
+     * symlink escape by comparing the real (symlink-resolved) paths. Only serves
+     * new-project (local) results — never an existing-repo clone.
      */
     public Optional<Path> resolvePreviewFile(String taskId, String relativePath) {
+        if (!isLocalResult(taskId)) return Optional.empty();
         Path dir = resultDir(taskId).orElse(null);
         if (dir == null) return Optional.empty();
         String rel = (relativePath == null || relativePath.isBlank()) ? "index.html" : relativePath;

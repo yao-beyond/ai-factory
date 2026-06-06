@@ -114,12 +114,18 @@ class WebUiTest {
                 .andExpect(status().isNotFound());
     }
 
+    // Mark a task as a new-project (local) result so preview is allowed.
+    private void markLocalResult(String id) throws Exception {
+        java.nio.file.Files.write(workDir().resolve(id).resolve("result.zip"), new byte[]{0x50, 0x4b, 0x05, 0x06});
+    }
+
     @Test
     void previewServesGeneratedIndexHtml() throws Exception {
         java.nio.file.Path repo = workDir().resolve("UAT-PREVIEW").resolve("workspace").resolve("repo");
         java.nio.file.Files.createDirectories(repo);
         java.nio.file.Files.writeString(repo.resolve("index.html"),
                 "<!doctype html><html><body><h1>我的待辦清單</h1></body></html>");
+        markLocalResult("UAT-PREVIEW");
         mvc.perform(get("/gateway/preview/UAT-PREVIEW/"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith("text/html"))
@@ -131,6 +137,7 @@ class WebUiTest {
         java.nio.file.Path repo = workDir().resolve("UAT-TRAVERSAL").resolve("workspace").resolve("repo");
         java.nio.file.Files.createDirectories(repo);
         java.nio.file.Files.writeString(repo.resolve("index.html"), "<html>ok</html>");
+        markLocalResult("UAT-TRAVERSAL");
         mvc.perform(get("/gateway/preview/UAT-TRAVERSAL/../../../../etc/hosts"))
                 .andExpect(status().isNotFound());
     }
@@ -140,6 +147,7 @@ class WebUiTest {
         java.nio.file.Path repo = workDir().resolve("UAT-SYMLINK").resolve("workspace").resolve("repo");
         java.nio.file.Files.createDirectories(repo);
         java.nio.file.Files.writeString(repo.resolve("index.html"), "<html>ok</html>");
+        markLocalResult("UAT-SYMLINK");
         // A secret file OUTSIDE the project, and a symlink inside pointing to it.
         java.nio.file.Path secret = workDir().resolve("UAT-SYMLINK").resolve("secret.txt");
         java.nio.file.Files.writeString(secret, "TOP SECRET");
@@ -150,6 +158,19 @@ class WebUiTest {
         }
         mvc.perform(get("/gateway/preview/UAT-SYMLINK/escape.txt"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void previewDeniedForExistingRepoResult() throws Exception {
+        // Existing-repo tasks also clone into workspace/repo, but produce NO result.zip.
+        // Preview must NOT expose that private cloned source.
+        java.nio.file.Path repo = workDir().resolve("UAT-EXISTING").resolve("workspace").resolve("repo");
+        java.nio.file.Files.createDirectories(repo);
+        java.nio.file.Files.writeString(repo.resolve("index.html"), "<html>private repo</html>");
+        java.nio.file.Files.writeString(repo.resolve("secrets.env"), "API_KEY=super-secret");
+        // No result.zip -> not a local result.
+        mvc.perform(get("/gateway/preview/UAT-EXISTING/")).andExpect(status().isNotFound());
+        mvc.perform(get("/gateway/preview/UAT-EXISTING/secrets.env")).andExpect(status().isNotFound());
     }
 
     @Test
