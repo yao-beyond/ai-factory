@@ -248,9 +248,9 @@ if [ "$LOCAL_MODE" = true ]; then
       -x '.omc/*' './.omc/*' \
       -x 'docs/ai/*' './docs/ai/*' || true
   else
-    # Fallback: git archive only includes tracked files (no .git/.omc); also drop
-    # the pipeline's docs/ai metadata.
-    git archive --format=zip -o "$ZIP_PATH" HEAD -- . ':(exclude)docs/ai' 2>/dev/null || true
+    # Fallback (e.g. no zip binary): git archive includes tracked files, so also
+    # exclude tracked tooling artifacts (.omc) and the pipeline's docs/ai metadata.
+    git archive --format=zip -o "$ZIP_PATH" HEAD -- . ':(exclude)docs/ai' ':(exclude).omc' 2>/dev/null || true
   fi
   [ -f "$ZIP_PATH" ] && RESULT_ZIP="$ZIP_PATH"
 fi

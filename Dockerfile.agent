@@ -1,7 +1,7 @@
 FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y \
-    git curl jq ca-certificates bash openssh-client \
+    git curl jq zip ca-certificates bash openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
