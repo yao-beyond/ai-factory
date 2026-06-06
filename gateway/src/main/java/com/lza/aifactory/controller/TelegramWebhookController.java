@@ -4,26 +4,38 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.lza.aifactory.dto.IssueDto;
 import com.lza.aifactory.dto.TaskRecord;
 import com.lza.aifactory.service.TaskService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestClient;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/webhook")
 public class TelegramWebhookController {
     private static final String SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
+    private static final Logger log = LoggerFactory.getLogger(TelegramWebhookController.class);
 
     private final TaskService taskService;
     private final String telegramSecret;
+    private final String botToken;
+    private final String publicBaseUrl;
+    private final RestClient restClient = RestClient.create();
 
     public TelegramWebhookController(TaskService taskService,
-                                     @Value("${ai-factory.telegram-secret:}") String telegramSecret) {
+                                     @Value("${ai-factory.telegram-secret:}") String telegramSecret,
+                                     @Value("${ai-factory.telegram-bot-token:}") String botToken,
+                                     @Value("${ai-factory.public-base-url:http://localhost:8080}") String publicBaseUrl) {
         this.taskService = taskService;
         this.telegramSecret = telegramSecret;
+        this.botToken = botToken;
+        this.publicBaseUrl = publicBaseUrl;
     }
 
     @PostMapping("/telegram")
@@ -41,7 +53,33 @@ public class TelegramWebhookController {
         Long chatId = payload.path("message").path("chat").path("id").asLong();
         IssueDto dto = parseTelegramIssue(text, chatId);
         TaskRecord record = taskService.submit(dto);
+        sendInlineButtons(chatId, record);
         return ResponseEntity.ok(record);
+    }
+
+    /**
+     * Best-effort reply with inline buttons linking to the friendly progress page
+     * and the JSON status. Uses URL buttons only (no callback handling needed).
+     */
+    private void sendInlineButtons(Long chatId, TaskRecord record) {
+        if (botToken == null || botToken.isBlank() || chatId == null || chatId == 0L) return;
+        String base = publicBaseUrl.replaceAll("/+$", "");
+        String uiUrl = base + "/gateway/ui/" + record.taskId();
+        Map<String, Object> body = Map.of(
+                "chat_id", chatId,
+                "text", "📩 已收到你的需求「" + record.title() + "」，開始處理中。點下方按鈕隨時看進度。",
+                "reply_markup", Map.of("inline_keyboard", List.of(List.of(
+                        Map.of("text", "📊 查看進度", "url", uiUrl)
+                ))));
+        try {
+            restClient.post()
+                    .uri("https://api.telegram.org/bot{token}/sendMessage", botToken)
+                    .body(body)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception e) {
+            log.warn("Failed to send Telegram inline buttons for {}: {}", record.taskId(), e.getMessage());
+        }
     }
 
     private IssueDto parseTelegramIssue(String text, Long chatId) {

@@ -13,10 +13,17 @@ public record TaskRecord(
         String message,
         Instant submittedAt,
         Instant updatedAt,
-        String workDir
+        String workDir,
+        String prUrl
 ) {
     public TaskRecord withStatus(TaskStatus newStatus, String newMessage) {
         return new TaskRecord(taskId, source, externalId, title, repo, targetBranch,
-                newStatus, newMessage, submittedAt, Instant.now(), workDir);
+                newStatus, newMessage, submittedAt, Instant.now(), workDir, prUrl);
+    }
+
+    public TaskRecord withStatus(TaskStatus newStatus, String newMessage, String newPrUrl) {
+        return new TaskRecord(taskId, source, externalId, title, repo, targetBranch,
+                newStatus, newMessage, submittedAt, Instant.now(), workDir,
+                newPrUrl == null || newPrUrl.isBlank() ? prUrl : newPrUrl);
     }
 }
