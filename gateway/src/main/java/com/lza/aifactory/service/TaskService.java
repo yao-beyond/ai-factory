@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -34,6 +35,7 @@ public class TaskService {
     private final AiFactoryProperties properties;
     private final PipelineExecutor pipelineExecutor;
     private final EtaService etaService;
+    private final ArchiveExtractor archiveExtractor;
     private final Path workDir;
     private final List<String> allowRepositories;
     private final Map<String, TaskRecord> tasks = new ConcurrentHashMap<>();
@@ -42,12 +44,14 @@ public class TaskService {
                        AiFactoryProperties properties,
                        PipelineExecutor pipelineExecutor,
                        EtaService etaService,
+                       ArchiveExtractor archiveExtractor,
                        @Value("${ai-factory.work-dir}") String workDir,
                        @Value("${ai-factory.allow-repositories:}") String allowRepositoriesCsv) {
         this.objectMapper = objectMapper;
         this.properties = properties;
         this.pipelineExecutor = pipelineExecutor;
         this.etaService = etaService;
+        this.archiveExtractor = archiveExtractor;
         this.workDir = Path.of(workDir);
         // Allowlist = typed config (ai-factory.yml security.allowRepositories)
         // plus the legacy CSV property, for backward compatibility.
@@ -91,6 +95,27 @@ public class TaskService {
     }
 
     public TaskRecord submit(IssueDto dto) throws IOException {
+        return submitInternal(dto, null);
+    }
+
+    /**
+     * Import an existing project from an uploaded zip and improve it locally
+     * (mode=import) — no git account/token, no remote.
+     */
+    public TaskRecord submitImportZip(IssueDto dto, InputStream zipStream) throws IOException {
+        dto.setMode("import");
+        return submitInternal(dto, taskDir -> {
+            Path repo = taskDir.resolve("workspace").resolve("repo");
+            archiveExtractor.extractZip(zipStream, repo);
+        });
+    }
+
+    @FunctionalInterface
+    interface SeedAction {
+        void seed(Path taskDir) throws IOException;
+    }
+
+    private TaskRecord submitInternal(IssueDto dto, SeedAction seed) throws IOException {
         validateRepoAllowed(dto.getRepo());
 
         String taskId = normalizeTaskId(
@@ -102,14 +127,17 @@ public class TaskService {
         Files.createDirectories(taskDir);
         Files.writeString(taskDir.resolve("issue.json"),
                 objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(dto));
+        if (seed != null) {
+            seed.seed(taskDir); // e.g. extract the uploaded zip into workspace/repo
+        }
         writeStatus(taskDir, TaskStatus.SUBMITTED, "submitted");
 
         pipelineExecutor.start(new PipelineRequest(taskId, taskDir, buildEnv(dto)));
         etaService.markStart(taskId);
         appendEvent(taskDir, taskId, "submitted", TaskStatus.SUBMITTED, "submitted");
 
-        log.info("Submitted task taskId={} source={} externalId={} repo={}",
-                taskId, dto.getSource(), dto.getExternalId(), dto.getRepo());
+        log.info("Submitted task taskId={} source={} mode={} externalId={} repo={}",
+                taskId, dto.getSource(), dto.getMode(), dto.getExternalId(), dto.getRepo());
 
         TaskRecord record = new TaskRecord(
                 taskId, dto.getSource(), dto.getExternalId(), dto.getTitle(),
@@ -134,9 +162,16 @@ public class TaskService {
         if (dto.getPriority() != null) {
             env.put("ISSUE_PRIORITY", dto.getPriority());
         }
-        // Brand-new project: run in local scratch mode (no clone/push/PR/token).
-        if ("new".equalsIgnoreCase(dto.getMode())) {
+        // New + import both run in local mode (no clone/push/PR/token). Import
+        // works on a seed: an uploaded zip (already extracted into workspace/repo)
+        // or a local folder (copied by the pipeline from SOURCE_PATH).
+        String mode = dto.getMode();
+        if ("new".equalsIgnoreCase(mode) || "import".equalsIgnoreCase(mode)) {
             env.put("PROJECT_MODE", "local");
+        }
+        if ("import".equalsIgnoreCase(mode)
+                && dto.getSourcePath() != null && !dto.getSourcePath().isBlank()) {
+            env.put("SOURCE_PATH", dto.getSourcePath());
         }
         return env;
     }
@@ -171,7 +206,8 @@ public class TaskService {
         if (!Files.exists(issue)) return false;
         try {
             IssueDto dto = objectMapper.readValue(Files.readString(issue), IssueDto.class);
-            return "new".equalsIgnoreCase(dto.getMode());
+            String mode = dto.getMode();
+            return "new".equalsIgnoreCase(mode) || "import".equalsIgnoreCase(mode);
         } catch (IOException e) {
             return false;
         }

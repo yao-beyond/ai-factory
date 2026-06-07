@@ -17,9 +17,12 @@ public class IssueDto {
     private List<String> labels = List.of();
     private String repo;
     private String targetBranch = "main";
-    // "existing" (default) works on an existing repo and opens a PR.
-    // "new" generates a brand-new project locally — no git account/token needed.
+    // "existing" works on a git repo and opens a PR (needs a git account/token).
+    // "new"      generates a brand-new project locally — no git needed.
+    // "import"   improves an uploaded/local existing project locally — no git needed.
     private String mode = "existing";
+    // For mode=import via a local folder: an absolute path to copy as the seed.
+    private String sourcePath;
     @Min(1)
     @Max(10)
     private Integer maxAgents = 3;
@@ -42,6 +45,8 @@ public class IssueDto {
     public void setTargetBranch(String targetBranch) { this.targetBranch = targetBranch; }
     public String getMode() { return mode; }
     public void setMode(String mode) { this.mode = mode; }
+    public String getSourcePath() { return sourcePath; }
+    public void setSourcePath(String sourcePath) { this.sourcePath = sourcePath; }
     public Integer getMaxAgents() { return maxAgents; }
     public void setMaxAgents(Integer maxAgents) { this.maxAgents = maxAgents; }
 }

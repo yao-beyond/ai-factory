@@ -7,6 +7,11 @@ spring:
   # overrides the path (compose/k8s set it).
   config:
     import: "optional:file:${AI_FACTORY_CONFIG:./ai-factory.yml}"
+  # Allow uploading an existing project as a zip (import mode).
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
 
 ai-factory:
   work-dir: ${AI_FACTORY_WORK_DIR:/opt/ai-jobs}

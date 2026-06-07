@@ -42,8 +42,63 @@ class WebUiTest {
     void homeFormOffersNewProjectChoice() throws Exception {
         mvc.perform(get("/"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("做一個全新的東西")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("做全新的")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("改我的檔案")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("不需要 git")));
+    }
+
+    private static byte[] zipOf(java.util.Map<String, String> entries) throws Exception {
+        var bos = new java.io.ByteArrayOutputStream();
+        try (var zos = new java.util.zip.ZipOutputStream(bos)) {
+            for (var e : entries.entrySet()) {
+                zos.putNextEntry(new java.util.zip.ZipEntry(e.getKey()));
+                zos.write(e.getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                zos.closeEntry();
+            }
+        }
+        return bos.toByteArray();
+    }
+
+    @Test
+    void importZipCreatesTaskAndExtractsFiles() throws Exception {
+        byte[] zip = zipOf(java.util.Map.of(
+                "index.html", "<html>my existing site</html>",
+                "css/app.css", "body{}"));
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "site.zip", "application/zip", zip);
+        String json = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .multipart("/gateway/import").file(file)
+                        .param("title", "改我的網站").param("description", "把標題改大").param("maxAgents", "1"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String taskId = com.jayway.jsonpath.JsonPath.read(json, "$.taskId");
+        // The zip was extracted into the task's workspace/repo.
+        java.nio.file.Path repo = workDir().resolve(taskId).resolve("workspace").resolve("repo");
+        org.junit.jupiter.api.Assertions.assertTrue(java.nio.file.Files.exists(repo.resolve("index.html")));
+        org.junit.jupiter.api.Assertions.assertTrue(java.nio.file.Files.exists(repo.resolve("css/app.css")));
+        // issue.json records mode=import.
+        String issue = java.nio.file.Files.readString(workDir().resolve(taskId).resolve("issue.json"));
+        org.junit.jupiter.api.Assertions.assertTrue(issue.contains("\"mode\" : \"import\""));
+    }
+
+    @Test
+    void importRejectsZipSlip() throws Exception {
+        byte[] evil = zipOf(java.util.Map.of("../../../../tmp/evil.txt", "pwned"));
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "evil.zip", "application/zip", evil);
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .multipart("/gateway/import").file(file)
+                        .param("title", "t").param("description", "d"))
+                .andExpect(status().isBadRequest());
+        org.junit.jupiter.api.Assertions.assertFalse(
+                java.nio.file.Files.exists(java.nio.file.Path.of("/tmp/evil.txt")));
+    }
+
+    @Test
+    void importRejectsNonZip() throws Exception {
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "notes.txt", "text/plain", "hi".getBytes());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .multipart("/gateway/import").file(file)
+                        .param("title", "t").param("description", "d"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

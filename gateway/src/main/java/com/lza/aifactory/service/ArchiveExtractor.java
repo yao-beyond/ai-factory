@@ -1,0 +1,71 @@
+package com.lza.aifactory.service;
+
+import org.springframework.stereotype.Component;
+
+import java.io.BufferedOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
+/**
+ * Safely extracts an uploaded zip into a target directory. Protects against:
+ * - zip-slip / path traversal (entries that resolve outside the target),
+ * - absolute-path entries,
+ * - zip bombs (caps total uncompressed bytes and entry count).
+ */
+@Component
+public class ArchiveExtractor {
+
+    private static final long MAX_TOTAL_BYTES = 100L * 1024 * 1024; // 100 MB
+    private static final int MAX_ENTRIES = 5000;
+    private static final int BUFFER = 8192;
+
+    public void extractZip(InputStream in, Path targetDir) throws IOException {
+        Path root = targetDir.toAbsolutePath().normalize();
+        Files.createDirectories(root);
+
+        long totalBytes = 0;
+        int entries = 0;
+
+        try (ZipInputStream zis = new ZipInputStream(in)) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (++entries > MAX_ENTRIES) {
+                    throw new IOException("封存檔包含過多檔案（上限 " + MAX_ENTRIES + "）。");
+                }
+                String name = entry.getName();
+                // Reject absolute paths outright.
+                if (name.startsWith("/") || name.startsWith("\\") || name.contains(":")) {
+                    throw new IOException("封存檔含不安全的路徑：" + name);
+                }
+                Path resolved = root.resolve(name).normalize();
+                // Zip-slip: the resolved path must stay inside the target dir.
+                if (!resolved.startsWith(root)) {
+                    throw new IOException("封存檔含路徑穿越項目：" + name);
+                }
+                if (entry.isDirectory()) {
+                    Files.createDirectories(resolved);
+                    zis.closeEntry();
+                    continue;
+                }
+                Files.createDirectories(resolved.getParent());
+                try (OutputStream os = new BufferedOutputStream(Files.newOutputStream(resolved))) {
+                    byte[] buf = new byte[BUFFER];
+                    int n;
+                    while ((n = zis.read(buf)) > 0) {
+                        totalBytes += n;
+                        if (totalBytes > MAX_TOTAL_BYTES) {
+                            throw new IOException("封存檔解壓後過大（上限 100 MB）。");
+                        }
+                        os.write(buf, 0, n);
+                    }
+                }
+                zis.closeEntry();
+            }
+        }
+    }
+}

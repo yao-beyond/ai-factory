@@ -128,17 +128,33 @@ cd "$WORK"
 
 STAGE=clone
 if [ "$LOCAL_MODE" = true ]; then
-  # Brand-new project: initialise a private scratch repo (git is used internally
-  # only; the user never needs an account, token, or remote).
-  set_status RUNNING "preparing a new project"
-  if [ ! -d repo/.git ]; then
-    git init -b "$TARGET_BRANCH" repo
+  # Local mode: git is used internally only — the user never needs an account,
+  # token, or remote. Two flavours:
+  #   - import: seed workspace/repo from an uploaded zip (already extracted by the
+  #     gateway) or copy a local folder (SOURCE_PATH).
+  #   - new: start from an empty project.
+  if [ -n "${SOURCE_PATH:-}" ] && [ -d "$SOURCE_PATH" ]; then
+    set_status RUNNING "importing your project"
+    mkdir -p repo
+    # Copy the folder's contents (never its .git) into repo.
+    ( cd "$SOURCE_PATH" && tar --exclude='./.git' --exclude='./.git/*' -cf - . ) | ( cd repo && tar -xf - )
+  fi
+  if [ -d repo ] && find repo -mindepth 1 -not -path 'repo/.git*' -print -quit 2>/dev/null | grep -q .; then
+    # Seeded (import): commit the existing files as the base.
+    set_status RUNNING "importing your project"
     cd repo
-    git config user.email "ai-factory@localhost"
-    git config user.name "AI Factory"
-    git commit --allow-empty -m "chore: initialize new project" >/dev/null
+    [ -d .git ] || git init -b "$TARGET_BRANCH" >/dev/null
+    git config user.email "ai-factory@localhost"; git config user.name "AI Factory"
+    git add -A
+    git commit -q -m "chore: import existing project" >/dev/null 2>&1 || \
+      git commit -q --allow-empty -m "chore: import existing project" >/dev/null 2>&1 || true
   else
-    cd repo
+    # Brand-new empty project.
+    set_status RUNNING "preparing a new project"
+    mkdir -p repo; cd repo
+    [ -d .git ] || git init -b "$TARGET_BRANCH" >/dev/null
+    git config user.email "ai-factory@localhost"; git config user.name "AI Factory"
+    git commit --allow-empty -m "chore: initialize new project" >/dev/null
   fi
 else
   set_status RUNNING "cloning $REPO_URL"

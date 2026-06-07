@@ -69,10 +69,17 @@ public class WebUiController {
                 <form id="f" onsubmit="return submitForm(event)">
                   <label>你想做什麼？</label>
                   <div class="mode">
-                    <label><input type="radio" name="mode" value="new" checked><span>✨ 做一個全新的東西</span></label>
-                    <label><input type="radio" name="mode" value="existing"><span>🔧 改現有的專案</span></label>
+                    <label><input type="radio" name="mode" value="new" checked onchange="onMode()"><span>✨ 做全新的</span></label>
+                    <label><input type="radio" name="mode" value="import" onchange="onMode()"><span>📦 改我的檔案</span></label>
+                    <label><input type="radio" name="mode" value="existing" onchange="onMode()"><span>🔧 連 git 專案</span></label>
                   </div>
-                  <div class="hint">全新專案不需要 git 帳號或金鑰，完成後直接給你可下載的成果。</div>
+                  <div class="hint">「做全新的」與「改我的檔案」都不需要 git 帳號或金鑰。</div>
+
+                  <div id="uploadRow" style="display:none">
+                    <label for="file">上傳你現有的專案（.zip）</label>
+                    <input type="file" id="file" accept=".zip">
+                    <div class="hint">把你現有的檔案壓成一個 zip 上傳，AI 會在上面改，完成後給你可下載／預覽的成果。</div>
+                  </div>
 
                   <label for="title">標題</label>
                   <input type="text" id="title" required placeholder="例如：結帳頁面加上儲存常用地址">
@@ -95,21 +102,33 @@ public class WebUiController {
                 <div class="foot"><a href="/gateway/ui">查看所有任務 →</a></div>
               </div>
               <script>
+                function onMode(){
+                  const m = document.querySelector('input[name=mode]:checked').value;
+                  document.getElementById('uploadRow').style.display = (m === 'import') ? 'block' : 'none';
+                }
                 async function submitForm(e){
                   e.preventDefault();
                   const err = document.getElementById('err');
                   err.style.display='none';
-                  const body = {
-                    source: "web",
-                    mode: document.querySelector('input[name=mode]:checked').value,
-                    title: document.getElementById('title').value,
-                    description: document.getElementById('description').value,
-                    maxAgents: parseInt(document.querySelector('input[name=strength]:checked').value, 10)
-                  };
+                  const mode = document.querySelector('input[name=mode]:checked').value;
+                  const title = document.getElementById('title').value;
+                  const description = document.getElementById('description').value;
+                  const maxAgents = parseInt(document.querySelector('input[name=strength]:checked').value, 10);
                   try{
-                    const r = await fetch('/gateway/issue', {
-                      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-                    });
+                    let r;
+                    if(mode === 'import'){
+                      const f = document.getElementById('file').files[0];
+                      if(!f){ throw new Error('請先選擇一個 .zip 檔'); }
+                      const fd = new FormData();
+                      fd.append('file', f); fd.append('title', title);
+                      fd.append('description', description); fd.append('maxAgents', maxAgents);
+                      r = await fetch('/gateway/import', { method:'POST', body: fd });
+                    } else {
+                      r = await fetch('/gateway/issue', {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({ source:"web", mode, title, description, maxAgents })
+                      });
+                    }
                     if(!r.ok){ const t = await r.json().catch(()=>({})); throw new Error(t.message || ('HTTP '+r.status)); }
                     const rec = await r.json();
                     window.location.href = '/gateway/ui/' + encodeURIComponent(rec.taskId);
