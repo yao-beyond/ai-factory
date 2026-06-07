@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>"Your idea is the start of the production line." — Pinkie (粉圓)</strong><br>
-  Make building software as simple and elegant as blowing bubbles.
+  Turn ideas into reality, amplify developers — a <b>human-in-the-loop</b> AI software factory.
 </p>
 
 <p align="center">
@@ -29,6 +29,23 @@ button to the top-left of the web page"), and the AI will automatically:
 4. **Deliver** — open a Pull Request for an engineer to review, or just let you download the whole project.
 
 Works with **GitHub / GitLab / Bitbucket**, and is designed to drop into systems you already have.
+
+---
+
+## 🎯 Our philosophy: human-in-the-loop, you stay in control
+
+We believe technology should empower creativity, not get in its way. AI Factory has three goals:
+
+- **Empower ideas** — let non-coders turn a plain-language wish into a usable result.
+- **Augment developers** — a powerful sidekick that frees up productivity through AI coding, so you can focus on the architecture and decisions that matter.
+- **Human + machine** — we are **not here to replace developers**. The AI only produces **reviewable drafts**; the final say and the responsibility always rest with a human (the developer).
+
+This isn't just a slogan — it's built into the guardrails:
+
+- 🧭 **Confirm before building** — the AI plans first and waits; nothing is built until you approve.
+- ⏸️ **Pause / stop anytime** — a running task can be paused, resumed, or stopped.
+- 📦 **Drafts, not deployments** — new projects ship as a downloadable / previewable `result.zip`; existing projects get a **draft PR** (clearly marked as AI-generated and needing human review), and the AI **never touches `main` or protected branches**.
+- 🛡️ **Two layers of review** — Codex runs an automated safety review to assist you, but the AI **never merges or ships on its own** — the merge and the call are yours.
 
 ---
 
@@ -186,7 +203,9 @@ page, plus an estimated time remaining (UTC+8) while running.
 
 - **Never pushes to main**: agents only push `ai/<task-id>/*`; protected branches are
   refused even if the token allows it.
-- **Draft review**: every PR is labeled `ai-generated` and requires a human merge.
+- **Draft review**: every PR opens as a draft, clearly marked as AI-generated
+  (GitHub/GitLab add an `ai-generated` label; Bitbucket uses a `[Draft]` title
+  prefix), and needs a human to review and merge it.
 - **Allowlist**: only repos listed in `ai-factory.yml` are accepted.
 - **Resource safety**: `maxAgents` is capped; a crashed pipeline is reconciled to
   failed (never hangs); `status.txt` is written atomically.

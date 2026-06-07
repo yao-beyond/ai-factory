@@ -72,7 +72,7 @@ public class WebUiController {
               <div class="card">
                 <img class="mascot" src="/mascot.jpg" alt="AI Factory 吉祥物 粉圓">
                 <h1>請 AI Factory 幫你做一件事</h1>
-                <p class="sub">嗨，我是粉圓 🫧 用白話描述你要什麼就好，不需要懂程式。完成後會給你一個可審查的成果。</p>
+                <p class="sub">嗨，我是粉圓 🫧 不管你會不會寫程式——用白話描述想法就好。我會交給你一份<b>可審查的 AI 草稿</b>，最後由你把關、由你決定。我是來幫忙的，不是來取代你的。</p>
                 <form id="f" onsubmit="return submitForm(event)">
                   <label>你想做什麼？</label>
                   <div class="mode">
