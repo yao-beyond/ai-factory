@@ -167,6 +167,15 @@ else
   git pull origin "$TARGET_BRANCH"
 fi
 
+# Local mode never has a remote. Disable any credential helper at the REPO level
+# (git installs ship credential.helper=osxkeychain by default), so NO git command
+# run in this repo — including ones the AI agent runs — can pop a macOS keychain
+# prompt for stored GitLab/GitHub secrets. Repo-level config is read regardless of
+# environment, so this is robust even for child processes that reset env vars.
+if [ "$LOCAL_MODE" = true ]; then
+  git config credential.helper "" 2>/dev/null || true
+fi
+
 mkdir -p docs/ai
 cp "${BASE}/issue.json" docs/ai/issue.json
 
