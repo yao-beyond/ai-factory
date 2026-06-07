@@ -26,6 +26,7 @@ public class IssueDto {
     @Min(1)
     @Max(10)
     private Integer maxAgents = 3;
+    private String projectType = "recommend";
 
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }
@@ -49,4 +50,6 @@ public class IssueDto {
     public void setSourcePath(String sourcePath) { this.sourcePath = sourcePath; }
     public Integer getMaxAgents() { return maxAgents; }
     public void setMaxAgents(Integer maxAgents) { this.maxAgents = maxAgents; }
+    public String getProjectType() { return projectType; }
+    public void setProjectType(String projectType) { this.projectType = projectType; }
 }

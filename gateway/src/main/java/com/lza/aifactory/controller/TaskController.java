@@ -123,17 +123,18 @@ public class TaskController {
 
     /** Approve the plan and let the pipeline start building. */
     @PostMapping("/confirm/{taskId}")
-    public ResponseEntity<?> confirm(@PathVariable String taskId) {
-        return decide(taskId, true);
+    public ResponseEntity<?> confirm(@PathVariable String taskId, HttpServletRequest request) {
+        String option = request.getParameter("option");
+        return decide(taskId, true, option);
     }
 
     /** Cancel the task while it waits at the confirmation gate. */
     @PostMapping("/cancel/{taskId}")
     public ResponseEntity<?> cancel(@PathVariable String taskId) {
-        return decide(taskId, false);
+        return decide(taskId, false, null);
     }
 
-    private ResponseEntity<?> decide(String taskId, boolean approve) {
+    private ResponseEntity<?> decide(String taskId, boolean approve, String option) {
         TaskRecord record = taskService.findStatus(taskId).orElse(null);
         if (record == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -145,12 +146,12 @@ public class TaskController {
                             "message", "task is not awaiting confirmation (status=" + record.status().name() + ")"));
         }
         try {
-            taskService.writeConfirmMarker(taskId, approve);
+            taskService.writeConfirmMarker(taskId, approve, option);
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "io_error", "message", "could not record decision"));
         }
-        return ResponseEntity.ok(Map.of("taskId", taskId, "decision", approve ? "approved" : "cancelled"));
+        return ResponseEntity.ok(Map.of("taskId", taskId, "decision", approve ? "approved" : "cancelled", "option", option == null ? "" : option));
     }
 
     /**
@@ -324,17 +325,100 @@ public class TaskController {
             """.formatted(id, status);
     }
 
-    /** Plain-language "what now" block shown when the task finishes (or waits). */
+    /** Star rows (開發速度/畫面順暢/未來擴充) for an option's ratings map, if any. */
+    private String ratingsHtml(Object ratingsObj) {
+        if (!(ratingsObj instanceof Map<?, ?> ratings) || ratings.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder("<div class=\"opt-ratings\">");
+        appendRating(sb, "開發速度", ratings.get("speed"));
+        appendRating(sb, "畫面順暢", ratings.get("smoothness"));
+        appendRating(sb, "未來擴充", ratings.get("scalability"));
+        return sb.append("</div>").toString();
+    }
+
+    private void appendRating(StringBuilder sb, String label, Object val) {
+        if (val == null) return;
+        int n;
+        if (val instanceof Number num) {
+            n = num.intValue();
+        } else {
+            try {
+                n = Integer.parseInt(String.valueOf(val).trim());
+            } catch (NumberFormatException e) {
+                return;
+            }
+        }
+        n = Math.max(0, Math.min(5, n));
+        String stars = "★★★★★".substring(0, n) + "☆☆☆☆☆".substring(0, 5 - n);
+        sb.append("<div class=\"opt-rating\"><span>").append(esc(label))
+          .append("</span><span class=\"stars\">").append(stars).append("</span></div>");
+    }
+
     private String resultBlock(TaskRecord r) {
         TaskStatus s = r.status();
         if (s == TaskStatus.AWAITING_CONFIRMATION) {
             String plan = taskService.readPlanSummary(r.taskId())
                     .map(md -> "<div class=\"sumtitle\">AI 打算這樣做：</div>" + renderSummaryHtml(md))
                     .orElse("<p>正在整理計畫摘要，稍候重新整理即可看到。</p>");
+            
+            List<Map<String, Object>> options = taskService.readOptions(r.taskId());
+            StringBuilder optionsHtml = new StringBuilder();
+            if (!options.isEmpty()) {
+                optionsHtml.append("<div class=\"sumtitle\">粉圓幫你想了幾個做法，挑一個喜歡的就好 🫧（不確定就用推薦的，最穩）</div>");
+                optionsHtml.append("<div class=\"option-cards\">");
+                // Pre-select the recommended option (fall back to the first valid
+                // one) so the hidden field matches the highlighted card. Values are
+                // coerced defensively — options.json is AI-generated.
+                String defaultId = "";
+                for (Map<String, Object> opt : options) {
+                    String id = str(opt.get("id"));
+                    if (id.isBlank()) continue;   // can't be selected; skip
+                    String title = str(opt.get("title"));
+                    String desc = str(opt.get("description"));
+                    Object recVal = opt.get("recommended");
+                    boolean recommended = Boolean.TRUE.equals(recVal)
+                            || "true".equalsIgnoreCase(String.valueOf(recVal));
+                    if (defaultId.isEmpty()) defaultId = id;
+                    if (recommended) defaultId = id;
+                    optionsHtml.append("""
+                        <div class="opt-card %s" data-opt-id="%s" onclick="selectOption(this)">
+                          %s
+                          <div class="opt-title">%s</div>
+                          <div class="opt-desc">%s</div>
+                          %s
+                        </div>
+                        """.formatted(
+                            recommended ? "selected" : "",
+                            esc(id),
+                            recommended ? "<div class=\"opt-badge\">👍 粉圓推薦</div>" : "",
+                            esc(title),
+                            esc(desc),
+                            ratingsHtml(opt.get("ratings"))
+                        ));
+                }
+                optionsHtml.append("</div>");
+                optionsHtml.append("<input type=\"hidden\" id=\"selectedOption\" value=\"%s\">"
+                        .formatted(esc(defaultId)));
+            }
+
             String id = esc(r.taskId());
             return """
+                <style>
+                  .option-cards{display:flex;gap:12px;margin:12px 0;flex-wrap:wrap;}
+                  .opt-card{flex:1;min-width:200px;border:2px solid #eaeef2;border-radius:12px;
+                            padding:16px;cursor:pointer;position:relative;transition:all .2s;}
+                  .opt-card:hover{border-color:#d0d7de;background:#fcfcfd;}
+                  .opt-card.selected{border-color:#0969da;background:#f0f7ff;}
+                  .opt-badge{position:absolute;top:-10px;right:10px;background:#0969da;color:#fff;
+                             font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;}
+                  .opt-title{font-weight:700;font-size:15px;margin-bottom:6px;color:#1f2328;}
+                  .opt-desc{font-size:13px;color:#656d76;line-height:1.5;}
+                  .opt-ratings{margin-top:10px;display:flex;flex-direction:column;gap:3px;}
+                  .opt-rating{display:flex;justify-content:space-between;font-size:12px;color:#656d76;}
+                  .opt-rating .stars{color:#f5a623;letter-spacing:1px;}
+                </style>
                 <div class="result await">
                   <h2>📝 請先確認開工方向</h2>
+                  %s
                   %s
                   <div class="confirm-actions">
                     <button class="btn ok" onclick="decide('confirm')">✅ 確認開工</button>
@@ -343,13 +427,23 @@ public class TaskController {
                   <p class="ask">確認後 AI 才會開始開發。方向不對就按「取消」，補充需求後重新送出即可。</p>
                 </div>
                 <script>
+                  function selectOption(el){
+                    document.querySelectorAll('.opt-card').forEach(function(c){ c.classList.remove('selected'); });
+                    el.classList.add('selected');
+                    // Read the id from the data attribute (never interpolated into
+                    // JS), so an AI-generated id can't break out of a JS string.
+                    document.getElementById('selectedOption').value = el.getAttribute('data-opt-id');
+                  }
                   function decide(a){
                     var btns = document.querySelectorAll('.confirm-actions .btn');
                     btns.forEach(function(b){ b.disabled = true; });
-                    fetch('/gateway/'+a+'/%s',{method:'POST'})
+                    var url = '/gateway/'+a+'/%s';
+                    var opt = document.getElementById('selectedOption');
+                    if(a === 'confirm' && opt){
+                      url += '?option=' + encodeURIComponent(opt.value);
+                    }
+                    fetch(url,{method:'POST'})
                       .then(function(r){
-                        // 409 = the task already moved on (e.g. a double click after
-                        // it started). That's not an error — just show its progress.
                         if(r.ok || r.status === 409){ location.reload(); return; }
                         alert('操作失敗，請稍後重試');
                         btns.forEach(function(b){ b.disabled = false; });
@@ -360,7 +454,7 @@ public class TaskController {
                       });
                   }
                 </script>
-                """.formatted(plan, id);
+                """.formatted(plan, optionsHtml.toString(), id);
         }
         if (s == TaskStatus.COMPLETED) {
             String summary = taskService.readSummary(r.taskId())
@@ -472,6 +566,11 @@ public class TaskController {
 
     private String orDash(String v) {
         return (v == null || v.isBlank()) ? "—" : v;
+    }
+
+    /** Null-safe coercion for AI-generated option fields that may not be strings. */
+    private static String str(Object o) {
+        return o == null ? "" : String.valueOf(o);
     }
 
     private String esc(String v) {

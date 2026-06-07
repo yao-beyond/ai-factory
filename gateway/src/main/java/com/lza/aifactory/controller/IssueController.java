@@ -35,7 +35,8 @@ public class IssueController {
     public ResponseEntity<?> importZip(@RequestParam(value = "file", required = false) MultipartFile file,
                                        @RequestParam(value = "title", required = false) String title,
                                        @RequestParam(value = "description", required = false) String description,
-                                       @RequestParam(value = "maxAgents", required = false) Integer maxAgents)
+                                       @RequestParam(value = "maxAgents", required = false) Integer maxAgents,
+                                       @RequestParam(value = "projectType", required = false) String projectType)
             throws Exception {
         if (file == null || file.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "no_file", "message", "請上傳一個 zip 檔。"));
@@ -54,6 +55,7 @@ public class IssueController {
         dto.setTitle(title);
         dto.setDescription(description);
         dto.setMaxAgents(maxAgents == null ? 3 : Math.max(1, Math.min(10, maxAgents)));
+        dto.setProjectType(projectType == null ? "recommend" : projectType);
         dto.setLabels(List.of("import"));
 
         try (var in = file.getInputStream()) {

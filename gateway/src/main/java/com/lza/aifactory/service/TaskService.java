@@ -166,6 +166,9 @@ public class TaskService {
         if (dto.getPriority() != null) {
             env.put("ISSUE_PRIORITY", dto.getPriority());
         }
+        if (dto.getProjectType() != null) {
+            env.put("PROJECT_TYPE", dto.getProjectType());
+        }
         // New + import both run in local mode (no clone/push/PR/token). Import
         // works on a seed: an uploaded zip (already extracted into workspace/repo)
         // or a local folder (copied by the pipeline from SOURCE_PATH).
@@ -249,6 +252,33 @@ public class TaskService {
     /** The plain-language plan summary shown at the pre-flight confirmation gate. */
     public Optional<String> readPlanSummary(String taskId) {
         return readMarkdown(taskId, "plan_summary.md");
+    }
+
+    /**
+     * The technical options proposed by the AI during the confirmation gate.
+     * The file is AI-generated, so this is defensive: anything that isn't a JSON
+     * array of objects is dropped (not thrown), and only object entries are kept
+     * with string keys — so a malformed-but-valid options.json can never crash
+     * the rendering code that iterates these as maps.
+     */
+    public List<Map<String, Object>> readOptions(String taskId) {
+        Path f = workDir.resolve(normalizeTaskId(taskId)).resolve("options.json");
+        if (!Files.exists(f)) return List.of();
+        try {
+            Object parsed = objectMapper.readValue(Files.readString(f), Object.class);
+            if (!(parsed instanceof List<?> raw)) return List.of();
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (Object o : raw) {
+                if (o instanceof Map<?, ?> m) {
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    m.forEach((k, v) -> entry.put(String.valueOf(k), v));
+                    out.add(entry);
+                }
+            }
+            return out;
+        } catch (IOException e) {
+            return List.of();
+        }
     }
 
     private Optional<String> readMarkdown(String taskId, String name) {
@@ -351,8 +381,12 @@ public class TaskService {
      * Write the approve/cancel marker the waiting pipeline polls for. Atomic
      * (temp + rename). The bash loop treats cancel as winning over approve.
      */
-    public void writeConfirmMarker(String taskId, boolean approve) throws IOException {
+    public void writeConfirmMarker(String taskId, boolean approve, String option) throws IOException {
         Path dir = workDir.resolve(normalizeTaskId(taskId));
+        if (approve && option != null && !option.isBlank()) {
+            Path optTarget = dir.resolve("confirm.option");
+            Files.writeString(optTarget, option.trim() + "\n");
+        }
         String name = approve ? "confirm.approve" : "confirm.cancel";
         Path target = dir.resolve(name);
         Path tmp = dir.resolve(name + ".tmp");

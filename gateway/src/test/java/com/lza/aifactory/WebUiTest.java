@@ -493,6 +493,91 @@ class WebUiTest {
         org.junit.jupiter.api.Assertions.assertTrue(json.contains("xyz123"));
     }
 
+    @Test
+    void confirmPageRendersOptionCardsAndPreselectsRecommended() throws Exception {
+        putAwaitingTask("UAT-OPTS", true);
+        // The recommended option is the SECOND one — the hidden field must default
+        // to it, not to options[0] (guards the preselect bug).
+        String optionsJson = """
+            [
+              {"id":"fast","title":"輕巧耐用型","description":"產出超快","stack":"HTML + Vanilla JS",
+               "ratings":{"speed":5,"smoothness":3,"scalability":2},"recommended":false},
+              {"id":"modern","title":"華麗專業型","description":"畫面很順","stack":"React + Vite",
+               "ratings":{"speed":3,"smoothness":5,"scalability":5},"recommended":true}
+            ]
+            """;
+        java.nio.file.Files.writeString(workDir().resolve("UAT-OPTS").resolve("options.json"), optionsJson);
+        String html = mvc.perform(get("/gateway/ui/UAT-OPTS"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        org.junit.jupiter.api.Assertions.assertTrue(html.contains("粉圓推薦"));
+        org.junit.jupiter.api.Assertions.assertTrue(html.contains("輕巧耐用型"));
+        org.junit.jupiter.api.Assertions.assertTrue(html.contains("華麗專業型"));
+        org.junit.jupiter.api.Assertions.assertTrue(html.contains("★"));        // stars rendered
+        org.junit.jupiter.api.Assertions.assertTrue(html.contains("開發速度"));
+        // Hidden default = the recommended id ("modern"), not the first ("fast").
+        org.junit.jupiter.api.Assertions.assertTrue(html.contains("id=\"selectedOption\" value=\"modern\""));
+    }
+
+    @Test
+    void confirmWithOptionWritesOptionMarker() throws Exception {
+        putAwaitingTask("UAT-OPT-PICK", false);
+        mvc.perform(post("/gateway/confirm/UAT-OPT-PICK").param("option", "modern"))
+                .andExpect(status().isOk());
+        java.nio.file.Path optFile = workDir().resolve("UAT-OPT-PICK").resolve("confirm.option");
+        org.junit.jupiter.api.Assertions.assertTrue(java.nio.file.Files.exists(optFile));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                java.nio.file.Files.readString(optFile).contains("modern"));
+    }
+
+    @Test
+    void optionCardIdIsNotInterpolatedIntoJavaScript() throws Exception {
+        putAwaitingTask("UAT-XSS", true);
+        // A malicious AI-generated id with a quote must not break out into JS.
+        String optionsJson = """
+            [
+              {"id":"x'),alert(1)//","title":"惡意","description":"d","recommended":true}
+            ]
+            """;
+        java.nio.file.Files.writeString(workDir().resolve("UAT-XSS").resolve("options.json"), optionsJson);
+        String html = mvc.perform(get("/gateway/ui/UAT-XSS"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        // The id rides a data attribute and is read via the DOM, never spliced
+        // into a JS string literal — so the vulnerable call form must be absent.
+        org.junit.jupiter.api.Assertions.assertFalse(html.contains("selectOption(this, '"));
+        org.junit.jupiter.api.Assertions.assertTrue(html.contains("onclick=\"selectOption(this)\""));
+        org.junit.jupiter.api.Assertions.assertTrue(html.contains("data-opt-id="));
+    }
+
+    @Test
+    void malformedOptionsDoNotCrashConfirmPage() throws Exception {
+        putAwaitingTask("UAT-BADOPT", true);
+        // Valid JSON, wrong shapes: a bare string, a number, and an object whose
+        // fields are non-strings. None of these may throw / 500 the page.
+        String optionsJson = """
+            [
+              "just a string",
+              42,
+              {"id":123,"title":99,"description":["a"],"ratings":"oops","recommended":"true"}
+            ]
+            """;
+        java.nio.file.Files.writeString(workDir().resolve("UAT-BADOPT").resolve("options.json"), optionsJson);
+        mvc.perform(get("/gateway/ui/UAT-BADOPT"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("請先確認開工方向")));
+    }
+
+    @Test
+    void nonArrayOptionsAreIgnored() throws Exception {
+        putAwaitingTask("UAT-OBJOPT", true);
+        java.nio.file.Files.writeString(workDir().resolve("UAT-OBJOPT").resolve("options.json"),
+                "{\"not\":\"an array\"}");
+        mvc.perform(get("/gateway/ui/UAT-OBJOPT"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("請先確認開工方向")));
+    }
+
     private java.nio.file.Path workDir() {
         return java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "ai-factory-webui-test");
     }

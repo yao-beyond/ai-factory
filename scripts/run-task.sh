@@ -32,6 +32,7 @@ if command -v jq >/dev/null 2>&1; then
   REPO_URL="${REPO_URL:-$(jq -r '.repo // empty' "${BASE}/issue.json")}"
   TARGET_BRANCH="${TARGET_BRANCH:-$(jq -r '.targetBranch // empty' "${BASE}/issue.json")}"
   MAX_AGENTS="${MAX_AGENTS:-$(jq -r '.maxAgents // empty' "${BASE}/issue.json")}"
+  PROJECT_TYPE="${PROJECT_TYPE:-$(jq -r '.projectType // "recommend"' "${BASE}/issue.json")}"
 fi
 
 # Then let ai-factory.yml (if present) fill any gaps and provide
@@ -54,6 +55,8 @@ esac
 [ "$MAX_AGENTS" -lt 1 ]  && MAX_AGENTS=1
 [ "$MAX_AGENTS" -gt 10 ] && MAX_AGENTS=10
 
+PROJECT_TYPE="${PROJECT_TYPE:-recommend}"
+
 # Project mode: "local" generates a brand-new project in a scratch repo with no
 # remote, no clone, no pull request, no token — for users who only have an idea.
 # "existing" (default) clones REPO_URL and opens a PR/MR as before.
@@ -61,7 +64,7 @@ PROJECT_MODE="${PROJECT_MODE:-existing}"
 if [ "${GIT_PROVIDER:-}" = "local" ]; then PROJECT_MODE="local"; fi
 LOCAL_MODE=false
 [ "$PROJECT_MODE" = "local" ] && LOCAL_MODE=true
-export TASK_ID TARGET_BRANCH MAX_AGENTS PROJECT_MODE
+export TASK_ID TARGET_BRANCH MAX_AGENTS PROJECT_MODE PROJECT_TYPE
 
 # A brand-new project never talks to a git remote. Make sure no git command in
 # this mode (including any the AI agent runs) can reach a credential helper /
@@ -199,6 +202,36 @@ if [ "$CONFIRM_BEFORE_BUILD" = "true" ]; then
       exit 4
     fi
     if [ -f "${BASE}/confirm.approve" ]; then
+      # Read the user's selected technology option if provided
+      if [ -f "${BASE}/confirm.option" ]; then
+        SELECTED_OPTION="$(cat "${BASE}/confirm.option" | tr -d '\r\n')"
+        export SELECTED_OPTION
+        # plan-finalize: resolve the picked option to its full detail and fold it
+        # into the plan, so every dev agent builds the SAME chosen stack (not a
+        # bare id) and can't diverge. Committed on the plan branch the dev
+        # worktrees branch from, below.
+        if [ -n "$SELECTED_OPTION" ] && [ -f "${BASE}/options.json" ] && command -v jq >/dev/null 2>&1; then
+          SEL="$(jq -c --arg id "$SELECTED_OPTION" '.[] | select(.id==$id)' "${BASE}/options.json" 2>/dev/null | head -1)"
+          if [ -n "$SEL" ]; then
+            SELECTED_OPTION_TITLE="$(printf '%s' "$SEL" | jq -r '.title // ""')"
+            SELECTED_OPTION_DESC="$(printf '%s' "$SEL" | jq -r '.description // ""')"
+            SELECTED_OPTION_STACK="$(printf '%s' "$SEL" | jq -r '.stack // ""')"
+            export SELECTED_OPTION_TITLE SELECTED_OPTION_DESC SELECTED_OPTION_STACK
+            if [ -f docs/ai/IMPLEMENTATION_PLAN.md ]; then
+              {
+                echo
+                echo "## 已選定技術方案（使用者於開工前確認）"
+                echo "- 方案：${SELECTED_OPTION_TITLE} (${SELECTED_OPTION})"
+                [ -n "$SELECTED_OPTION_STACK" ] && echo "- 技術組合：${SELECTED_OPTION_STACK}"
+                [ -n "$SELECTED_OPTION_DESC" ] && echo "- 說明：${SELECTED_OPTION_DESC}"
+                echo "- 所有實作必須遵循此方案，不可更換語言/框架/套件管理器。"
+              } >> docs/ai/IMPLEMENTATION_PLAN.md
+              git add docs/ai/IMPLEMENTATION_PLAN.md 2>/dev/null || true
+              git commit -q -m "docs(${TASK_ID}): finalize plan with selected option ${SELECTED_OPTION}" 2>/dev/null || true
+            fi
+          fi
+        fi
+      fi
       break
     fi
     sleep 2

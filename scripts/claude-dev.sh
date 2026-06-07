@@ -37,19 +37,35 @@ esac
 
 CLAUDE="${CLAUDE_BIN:-$(command -v claude 2>/dev/null || command -v claude-code 2>/dev/null || true)}"
 if [ -n "$CLAUDE" ]; then
+  # Include the user's chosen option (full detail, not just the id) if available.
+  USER_SELECTION=""
+  if [ -n "${SELECTED_OPTION:-}" ]; then
+    USER_SELECTION="使用者已選定技術方案：${SELECTED_OPTION_TITLE:-$SELECTED_OPTION}"
+    [ -n "${SELECTED_OPTION_STACK:-}" ] && USER_SELECTION="${USER_SELECTION}（技術組合：${SELECTED_OPTION_STACK}）"
+    USER_SELECTION="${USER_SELECTION}。必須遵循此方案，不可更換語言/框架/套件管理器。"
+  fi
+  
   aif_ai_retry 3 20 -- "$CLAUDE" -p --permission-mode acceptEdits <<PROMPT
 你是 Claude Code 實作工程師。
 
 請依照 docs/ai/IMPLEMENTATION_PLAN.md 開發。
+
+當前專案類型目標：${PROJECT_TYPE:-recommend}
+${USER_SELECTION}
 
 實作策略：${STYLE}
 
 規則：
 1. 僅修改計畫範圍內檔案。
 2. 不可修改 main/release 分支。
-3. 每完成一個 task 就執行測試：優先用專案既有測試命令（IMPLEMENTATION_PLAN.md 指定、或 package.json / Makefile / pom.xml / build.gradle 等慣例）；若專案沒有測試框架，至少手動驗證可正常執行。
-4. 核心商業邏輯（特別是涉及金錢、權限、資料正確性的部分）必須補上測試。
-5. 完成後產出 docs/ai/CLAUDE_SUMMARY_${AGENT_NO}.md。
+3. 如果是新專案 (local mode)，請確保包含必要的開發與啟動腳本 (如 README, package.json, Makefile 等)。
+4. 前端/後端交付要求：
+   - 若目標是網頁/互動/手機感類型：必須交付可在瀏覽器直接開啟的前端頁面，入口為 index.html。
+   - 若需求或所選方案包含後端服務：必須同時交付可啟動的後端，且前端要有實際呼叫後端 API 的功能，並在 README 寫明 install/test/start/preview。
+   - 純工具/自動化類型則不需前端，但要附 README 執行說明。
+5. 每完成一個 task 就執行測試：優先用專案既有測試命令（IMPLEMENTATION_PLAN.md 指定、或 package.json / Makefile / pom.xml / build.gradle 等慣例）；若專案沒有測試框架，至少手動驗證可正常執行。
+6. 核心商業邏輯（特別是涉及金錢、權限、資料正確性的部分）必須補上測試。
+7. 完成後產出 docs/ai/CLAUDE_SUMMARY_${AGENT_NO}.md。
 PROMPT
 else
   echo "WARN: claude-code CLI not found, leaving placeholder summary" >&2

@@ -47,11 +47,11 @@ public class WebUiController {
                       border:1px solid #d0d7de;border-radius:8px;font-size:15px;font-family:inherit;}
                 textarea{min-height:120px;resize:vertical;}
                 .hint{color:#8b949e;font-size:12px;margin-top:4px;}
-                .strength,.mode{display:flex;gap:8px;margin-top:6px;}
-                .strength label,.mode label{flex:1;font-weight:500;border:1px solid #d0d7de;border-radius:8px;
+                .strength,.mode,.project-type{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;}
+                .strength label,.mode label,.project-type label{flex:1;min-width:120px;font-weight:500;border:1px solid #d0d7de;border-radius:8px;
                       padding:10px;text-align:center;cursor:pointer;margin:0;}
-                .strength input,.mode input{display:none;}
-                .strength input:checked + span,.mode input:checked + span{font-weight:700;color:#0969da;}
+                .strength input,.mode input,.project-type input{display:none;}
+                .strength input:checked + span,.mode input:checked + span,.project-type input:checked + span{font-weight:700;color:#0969da;}
                 .mode label{padding:12px;}
                 button{margin-top:24px;width:100%;background:#1f883d;color:#fff;border:0;border-radius:8px;
                       padding:13px;font-size:16px;font-weight:600;cursor:pointer;}
@@ -88,6 +88,16 @@ public class WebUiController {
                   <label for="description">詳細描述</label>
                   <textarea id="description" required placeholder="背景、想解決的問題、期待的結果。越具體越好。"></textarea>
 
+                  <label>想要什麼樣的成品？</label>
+                  <div class="project-type">
+                    <label><input type="radio" name="projectType" value="recommend" checked><span>🔵 智慧推薦</span></label>
+                    <label><input type="radio" name="projectType" value="web"><span>📄 簡約網頁</span></label>
+                    <label><input type="radio" name="projectType" value="interactive"><span>🕹️ 互動工具</span></label>
+                    <label><input type="radio" name="projectType" value="mobile"><span>📱 手機感頁面</span></label>
+                    <label><input type="radio" name="projectType" value="backend"><span>⚙️ 純工具</span></label>
+                  </div>
+                  <div class="hint">如果不確定，選「智慧推薦」由粉圓幫你決定最合適的技術組合。</div>
+
                   <label>開發強度</label>
                   <div class="strength">
                     <label><input type="radio" name="strength" value="1"><span>⚡ 快速</span></label>
@@ -113,6 +123,7 @@ public class WebUiController {
                   const mode = document.querySelector('input[name=mode]:checked').value;
                   const title = document.getElementById('title').value;
                   const description = document.getElementById('description').value;
+                  const projectType = document.querySelector('input[name=projectType]:checked').value;
                   const maxAgents = parseInt(document.querySelector('input[name=strength]:checked').value, 10);
                   try{
                     let r;
@@ -122,11 +133,12 @@ public class WebUiController {
                       const fd = new FormData();
                       fd.append('file', f); fd.append('title', title);
                       fd.append('description', description); fd.append('maxAgents', maxAgents);
+                      fd.append('projectType', projectType);
                       r = await fetch('/gateway/import', { method:'POST', body: fd });
                     } else {
                       r = await fetch('/gateway/issue', {
                         method:'POST', headers:{'Content-Type':'application/json'},
-                        body: JSON.stringify({ source:"web", mode, title, description, maxAgents })
+                        body: JSON.stringify({ source:"web", mode, title, description, maxAgents, projectType })
                       });
                     }
                     if(!r.ok){ const t = await r.json().catch(()=>({})); throw new Error(t.message || ('HTTP '+r.status)); }
