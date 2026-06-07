@@ -63,6 +63,16 @@ LOCAL_MODE=false
 [ "$PROJECT_MODE" = "local" ] && LOCAL_MODE=true
 export TASK_ID TARGET_BRANCH MAX_AGENTS PROJECT_MODE
 
+# A brand-new project never talks to a git remote. Make sure no git command in
+# this mode (including any the AI agent runs) can reach a credential helper /
+# macOS keychain — so the user is never asked for GitLab/other stored secrets.
+if [ "$LOCAL_MODE" = true ]; then
+  export GIT_TERMINAL_PROMPT=0
+  export GIT_CONFIG_COUNT=1
+  export GIT_CONFIG_KEY_0=credential.helper
+  export GIT_CONFIG_VALUE_0=
+fi
+
 if [ "$LOCAL_MODE" = false ] && [ -z "${REPO_URL:-}" ]; then
   echo "ERROR: REPO_URL is empty (set REPO_URL env or issue.json .repo to a git URL)" >&2
   printf 'STATUS=FAILED\nMESSAGE=missing_repo_url\nUPDATED_AT=%s\n' "$(date -u +%FT%TZ)" > "${STATUS_FILE}.tmp.$$"
