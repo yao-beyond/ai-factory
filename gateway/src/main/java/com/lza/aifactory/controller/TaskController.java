@@ -277,9 +277,20 @@ public class TaskController {
                 </div>
                 <script>
                   function decide(a){
+                    var btns = document.querySelectorAll('.confirm-actions .btn');
+                    btns.forEach(function(b){ b.disabled = true; });
                     fetch('/gateway/'+a+'/%s',{method:'POST'})
-                      .then(r=>{ if(!r.ok){alert('操作失敗，請稍後重試');return;} location.reload(); })
-                      .catch(()=>alert('操作失敗，請稍後重試'));
+                      .then(function(r){
+                        // 409 = the task already moved on (e.g. a double click after
+                        // it started). That's not an error — just show its progress.
+                        if(r.ok || r.status === 409){ location.reload(); return; }
+                        alert('操作失敗，請稍後重試');
+                        btns.forEach(function(b){ b.disabled = false; });
+                      })
+                      .catch(function(){
+                        alert('操作失敗，請稍後重試');
+                        btns.forEach(function(b){ b.disabled = false; });
+                      });
                   }
                 </script>
                 """.formatted(plan, id);
