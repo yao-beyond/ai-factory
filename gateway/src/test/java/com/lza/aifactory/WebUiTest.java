@@ -93,6 +93,14 @@ class WebUiTest {
     }
 
     @Test
+    void importRejectsMissingFile() throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .multipart("/gateway/import")
+                        .param("title", "t").param("description", "d"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void importRejectsNonZip() throws Exception {
         var file = new org.springframework.mock.web.MockMultipartFile("file", "notes.txt", "text/plain", "hi".getBytes());
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders

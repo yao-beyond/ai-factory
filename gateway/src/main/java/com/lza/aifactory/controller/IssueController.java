@@ -32,9 +32,9 @@ public class IssueController {
      * file in the browser.
      */
     @PostMapping(value = "/import", consumes = "multipart/form-data")
-    public ResponseEntity<?> importZip(@RequestParam("file") MultipartFile file,
-                                       @RequestParam("title") String title,
-                                       @RequestParam("description") String description,
+    public ResponseEntity<?> importZip(@RequestParam(value = "file", required = false) MultipartFile file,
+                                       @RequestParam(value = "title", required = false) String title,
+                                       @RequestParam(value = "description", required = false) String description,
                                        @RequestParam(value = "maxAgents", required = false) Integer maxAgents)
             throws Exception {
         if (file == null || file.isEmpty()) {
