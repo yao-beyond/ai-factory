@@ -62,5 +62,7 @@ git add -A
 git commit -m "feat(${TASK_ID}): implement candidate ${AGENT_NO}" || true
 if [ "${PROJECT_MODE:-existing}" != "local" ]; then
   aif_assert_push_allowed "$BRANCH"
-  git push -u origin "$BRANCH"
+  # --force-with-lease so a re-run can overwrite a stale dev branch left on the
+  # remote by a previous attempt (these ai/<task>/dev-* branches are ours).
+  git push -u --force-with-lease origin "$BRANCH"
 fi
