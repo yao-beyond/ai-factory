@@ -212,15 +212,39 @@ fi
 
 STAGE=dev
 set_status DEVELOPING "spawning ${MAX_AGENTS} dev agents"
+PLAN_BRANCH="ai/${TASK_ID}/plan"
+# Each dev agent gets its OWN git worktree on its own branch (off plan), so
+# parallel agents never share a working tree or fight over the git index.lock.
+DEV_ROOT="${WORK}/dev"
+# Retry-safe cleanup: a previous interrupted run may have left worktrees (and
+# their .git/worktrees/* registrations) behind. Unregister + prune them so a
+# re-run of the same task can re-create them; -B below then resets each branch.
+for i in $(seq 1 "$MAX_AGENTS"); do
+  git worktree remove --force "${DEV_ROOT}/${i}" 2>/dev/null || true
+done
+rm -rf "$DEV_ROOT"
+git worktree prune 2>/dev/null || true
+mkdir -p "$DEV_ROOT"
 pids=()
 for i in $(seq 1 "$MAX_AGENTS"); do
-  bash "${PIPELINE_DIR}/claude-dev.sh" "$TASK_ID" "$i" &
+  wt="${DEV_ROOT}/${i}"
+  br="ai/${TASK_ID}/dev-${i}"
+  git worktree add -q -B "$br" "$wt" "$PLAN_BRANCH" 2>/dev/null \
+    || git worktree add -q -B "$br" "$wt" 2>/dev/null \
+    || git worktree add -q "$wt" "$br"
+  ( cd "$wt" && bash "${PIPELINE_DIR}/claude-dev.sh" "$TASK_ID" "$i" ) &
   pids+=("$!")
 done
 fail=0
 for pid in "${pids[@]}"; do
   if ! wait "$pid"; then fail=$((fail + 1)); fi
 done
+# Remove the worktrees (the dev-* branches stay in the shared .git for select).
+for i in $(seq 1 "$MAX_AGENTS"); do
+  git worktree remove --force "${DEV_ROOT}/${i}" 2>/dev/null || true
+done
+git worktree prune 2>/dev/null || true
+rm -rf "$DEV_ROOT" 2>/dev/null || true
 if [ "$fail" -ge "$MAX_AGENTS" ]; then
   set_status FAILED "all_dev_candidates_failed"
   exit 3

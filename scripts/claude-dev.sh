@@ -4,13 +4,15 @@ set -euo pipefail
 # Inputs:
 #   $1 TASK_ID
 #   $2 AGENT_NO  (1..MAX_AGENTS)
-# Pre-condition: working directory is the cloned repo, $TARGET_BRANCH exists,
-#                ai/${TASK_ID}/plan branch already created by codex-plan.sh.
+# Pre-condition: the CURRENT working directory is this agent's own git worktree,
+#                already checked out on branch ai/${TASK_ID}/dev-${AGENT_NO} (off
+#                the plan branch), set up by run-task.sh. Running each agent in its
+#                own worktree is what lets them build in parallel without sharing a
+#                working tree / git index.
 
 TASK_ID="${1:?TASK_ID required}"
 AGENT_NO="${2:?AGENT_NO required}"
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
-PLAN_BRANCH="ai/${TASK_ID}/plan"
 BRANCH="ai/${TASK_ID}/dev-${AGENT_NO}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,14 +20,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/git/branch-guard.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/lib/ai-retry.sh"
-
-# Branch from the plan branch so the dev agent has IMPLEMENTATION_PLAN.md.
-if git rev-parse --verify "$PLAN_BRANCH" >/dev/null 2>&1; then
-  git checkout "$PLAN_BRANCH"
-else
-  git checkout "$TARGET_BRANCH"
-fi
-git checkout -B "$BRANCH"
 
 # IMPLEMENTATION_PLAN.md is generated at runtime by codex-plan.sh inside the
 # cloned target repo. It is *not* a static file in the ai-factory repo. If we
