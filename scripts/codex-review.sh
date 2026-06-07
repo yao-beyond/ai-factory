@@ -25,14 +25,15 @@ mkdir -p docs/ai
 CODEX="${CODEX_BIN:-$(command -v codex 2>/dev/null || true)}"
 if [ -n "$CODEX" ]; then
   aif_ai_retry 3 20 -- "$CODEX" exec --skip-git-repo-check --color never -o docs/ai/CODEX_REVIEW.md - <<'PROMPT'
-請 review 目前 MR diff（已輸出至 /tmp/diff-*.patch）。
+請 review 目前變更 diff（已輸出至 /tmp/diff-*.patch）。
 
 請特別檢查：
 1. 是否符合 docs/ai/IMPLEMENTATION_PLAN.md
-2. funding rate / liquidation / margin / precision / rounding 風險
-3. concurrency / transaction / idempotency
+2. 正確性與邊界條件：錯誤處理、資料一致性、邊界/例外輸入
+3. 並行 / 交易 / 冪等性（若適用）
 4. API 相容性與安全性
 5. 測試是否足夠
+6. 若涉及金流、交易、權限等高風險領域，檢查該領域專門風險（如精度、捨入、額度、競態）
 
 只回報 high-signal / critical / major 問題，不要吹毛求疵。
 PROMPT

@@ -24,16 +24,17 @@ CODEX="${CODEX_BIN:-$(command -v codex 2>/dev/null || true)}"
 
 if [ -n "$CODEX" ]; then
   aif_ai_retry 3 20 -- "$CODEX" exec --skip-git-repo-check --color never -o docs/ai/IMPLEMENTATION_PLAN.md - <<'PROMPT'
-你是資深交易系統架構師與技術主管。
+你是資深軟體架構師與技術主管。
 
 請根據 docs/ai/issue.json 的需求產生實作計畫，不要直接大量寫程式碼。
+請依需求所屬領域與技術棧調整內容，不要預設特定產業。
 
 請輸出：
 1. 背景與目標
 2. 系統設計
 3. 模組拆分
-4. API / DB schema / config 變更
-5. 交易所風險檢查：funding rate、liquidation、margin、precision、rounding、idempotency、concurrency
+4. 介面 / 資料結構 / 設定變更（API、DB schema、config 等，視專案而定）
+5. 風險與正確性檢查：邊界條件、資料一致性、錯誤處理、安全性、並行/冪等性；若涉及金流、交易、權限等高風險領域，補上該領域對應的專門檢查
 6. 測試策略：unit / integration / regression
 7. Claude Code 執行任務清單
 8. 驗收條件

@@ -47,8 +47,8 @@ if [ -n "$CLAUDE" ]; then
 規則：
 1. 僅修改計畫範圍內檔案。
 2. 不可修改 main/release 分支。
-3. 每完成一個 task，跑 ./gradlew test；若不是 Gradle 專案，使用專案既有測試命令。
-4. 交易/金流/撮合/風控邏輯必須補測試。
+3. 每完成一個 task 就執行測試：優先用專案既有測試命令（IMPLEMENTATION_PLAN.md 指定、或 package.json / Makefile / pom.xml / build.gradle 等慣例）；若專案沒有測試框架，至少手動驗證可正常執行。
+4. 核心商業邏輯（特別是涉及金錢、權限、資料正確性的部分）必須補上測試。
 5. 完成後產出 docs/ai/CLAUDE_SUMMARY_${AGENT_NO}.md。
 PROMPT
 else
