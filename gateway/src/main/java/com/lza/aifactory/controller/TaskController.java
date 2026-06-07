@@ -73,6 +73,33 @@ public class TaskController {
         return ResponseEntity.ok(Map.of("taskId", taskId, "deleted", true));
     }
 
+    /** Stop a running task. Kills its process tree and marks it CANCELLED. */
+    @PostMapping("/tasks/{taskId}/abort")
+    public ResponseEntity<?> abortTask(@PathVariable String taskId) {
+        return taskService.abortTask(taskId)
+                ? ResponseEntity.ok(Map.of("taskId", taskId, "aborted", true))
+                : ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(Map.of("error", "not_running", "message", "這個任務不是進行中，無法中止"));
+    }
+
+    /** Soft-pause a running task (takes effect at the next stage boundary). */
+    @PostMapping("/tasks/{taskId}/pause")
+    public ResponseEntity<?> pauseTask(@PathVariable String taskId) {
+        return taskService.pauseTask(taskId)
+                ? ResponseEntity.ok(Map.of("taskId", taskId, "paused", true))
+                : ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(Map.of("error", "not_pausable", "message", "這個任務無法暫停"));
+    }
+
+    /** Resume a soft-paused task. */
+    @PostMapping("/tasks/{taskId}/resume")
+    public ResponseEntity<?> resumeTask(@PathVariable String taskId) {
+        return taskService.resumeTask(taskId)
+                ? ResponseEntity.ok(Map.of("taskId", taskId, "resumed", true))
+                : ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(Map.of("error", "not_resumable", "message", "這個任務無法繼續"));
+    }
+
     /** Download the generated project (local/new-project mode) as a zip. */
     @GetMapping("/result/{taskId}")
     public ResponseEntity<Resource> result(@PathVariable String taskId) {
@@ -181,14 +208,19 @@ public class TaskController {
     private String renderPage(TaskRecord r) {
         TaskStatus s = r.status();
         boolean failed = s == TaskStatus.FAILED;
+        boolean cancelled = s == TaskStatus.CANCELLED;
         boolean awaiting = s == TaskStatus.AWAITING_CONFIRMATION;
-        boolean done = s == TaskStatus.COMPLETED || failed;
+        // Terminal states (COMPLETED/FAILED/CANCELLED) are "done" — they must not
+        // be treated as running, or the page would show a live feed for a stopped
+        // task.
+        boolean done = r.terminal();
         boolean running = !done && !awaiting;
         // No meta-refresh: while running we drive updates with JS (a live activity
         // feed plus reload-on-stage-change), which a 3s full-page refresh would
         // otherwise wipe. Done/awaiting pages are static anyway.
         String refresh = "";
         String barColor = failed ? "#e5484d"
+                : cancelled ? "#8b949e"
                 : (s == TaskStatus.COMPLETED ? "#30a46c" : (awaiting ? "#d29922" : "#3b82f6"));
 
         return """
@@ -217,6 +249,7 @@ public class TaskController {
                 .result.ok{background:#e9f7ef;border:1px solid #b7ebc9;}
                 .result.bad{background:#fdeceb;border:1px solid #f5c4c2;}
                 .result.await{background:#fff8e6;border:1px solid #f0d999;}
+                .result.stopped{background:#f6f8fa;border:1px solid #d0d7de;}
                 .confirm-actions{display:flex;gap:10px;margin:14px 0 4px;}
                 .confirm-actions .btn{flex:1;text-align:center;border:0;border-radius:8px;padding:12px;
                        font-size:15px;font-weight:600;cursor:pointer;}
@@ -237,6 +270,12 @@ public class TaskController {
                 .nav a{flex:1;text-align:center;text-decoration:none;border:1px solid #d0d7de;
                        border-radius:8px;padding:10px;font-size:14px;color:#1f2328;background:#f6f8fa;}
                 .nav a:hover{background:#eef1f4;}
+                .controls{display:flex;gap:10px;margin-top:18px;}
+                .ctl{flex:1;border:0;border-radius:8px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;}
+                .ctl.pause{background:#fb8500;color:#fff;}
+                .ctl.resume{background:#1f883d;color:#fff;}
+                .ctl.abort{background:#f3b0b0;color:#7a1f1f;}
+                .ctl.abort:hover{background:#ec9a9a;}
                 .meta div{margin:4px 0;}
                 a{color:#0969da;}
                 .activity{margin-top:22px;}
@@ -258,6 +297,7 @@ public class TaskController {
                 <p class="msg">%s</p>
                 <div class="bar"><div class="fill"></div></div>
                 <div class="pct">%d%%</div>
+                %s
                 %s
                 %s
                 %s
@@ -283,6 +323,7 @@ public class TaskController {
                 s.progress(),
                 resultBlock(r),
                 etaBlock(r),
+                controlsBlock(r),
                 activityBlock(r, running),
                 esc(orDash(r.title())),
                 esc(formatLocalTime(r.updatedAt())));
@@ -302,6 +343,35 @@ public class TaskController {
         if (minutes < 60) return "約 " + minutes + " 分鐘";
         long hours = (minutes + 59) / 60;
         return "約 " + hours + " 小時";
+    }
+
+    /**
+     * Pause / resume / abort controls for a live task. Running tasks can be
+     * soft-paused or stopped; a paused task can be resumed or stopped; terminal
+     * and awaiting-confirmation tasks show nothing here.
+     */
+    private String controlsBlock(TaskRecord r) {
+        TaskStatus s = r.status();
+        if (r.terminal() || s == TaskStatus.AWAITING_CONFIRMATION) return "";
+        String id = esc(r.taskId());
+        boolean paused = s == TaskStatus.PAUSED;
+        String first = paused
+                ? "<button class=\"ctl resume\" onclick=\"ctl('resume')\">▶️ 繼續工作</button>"
+                : "<button class=\"ctl pause\" onclick=\"ctl('pause')\">⏸️ 休息一下</button>";
+        return """
+            <div class="controls">
+              %s
+              <button class="ctl abort" onclick="ctl('abort')">🛑 停止泡泡</button>
+            </div>
+            <script>
+              function ctl(action){
+                if(action === 'abort' && !confirm('現在停下來的話，之前的努力就白費囉～確定要叫粉圓收工嗎？')) return;
+                fetch('/gateway/tasks/%s/'+action, {method:'POST'})
+                  .then(function(r){ if(r.ok || r.status===409){ location.reload(); } else { alert('操作失敗，請稍後再試'); } })
+                  .catch(function(){ alert('操作失敗，請稍後再試'); });
+              }
+            </script>
+            """.formatted(first, id);
     }
 
     /**
@@ -530,6 +600,14 @@ public class TaskController {
                   %s
                 </div>
                 """.formatted(detail);
+        }
+        if (s == TaskStatus.CANCELLED) {
+            return """
+                <div class="result stopped">
+                  <h2>🛑 已停止</h2>
+                  <p class="ask">這個任務已經停止了，沒有產生任何變更，放心。需要的話，重新提出一個需求就好。</p>
+                </div>
+                """;
         }
         return "";
     }

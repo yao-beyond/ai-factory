@@ -688,6 +688,111 @@ class WebUiTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("UAT-REUSE")));
     }
 
+    @Test
+    void pauseWritesMarkerAndResumeRemovesIt() throws Exception {
+        mvc.perform(post("/gateway/issue").contentType("application/json")
+                        .content("{\"source\":\"web\",\"externalId\":\"UAT-PAUSE\",\"title\":\"t\",\"description\":\"d\",\"maxAgents\":1}"))
+                .andExpect(status().isOk());
+        java.nio.file.Path marker = workDir().resolve("UAT-PAUSE").resolve("pause.requested");
+        mvc.perform(post("/gateway/tasks/UAT-PAUSE/pause")).andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertTrue(java.nio.file.Files.exists(marker));
+        mvc.perform(post("/gateway/tasks/UAT-PAUSE/resume")).andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertFalse(java.nio.file.Files.exists(marker));
+    }
+
+    @Test
+    void abortMarksTaskCancelled() throws Exception {
+        mvc.perform(post("/gateway/issue").contentType("application/json")
+                        .content("{\"source\":\"web\",\"externalId\":\"UAT-ABORT\",\"title\":\"t\",\"description\":\"d\",\"maxAgents\":1}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/gateway/tasks/UAT-ABORT/abort")).andExpect(status().isOk());
+        mvc.perform(get("/gateway/status/UAT-ABORT"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("CANCELLED")));
+    }
+
+    @Test
+    void abortWritesAbortMarkerForOrphanBackstop() throws Exception {
+        mvc.perform(post("/gateway/issue").contentType("application/json")
+                        .content("{\"source\":\"web\",\"externalId\":\"UAT-ABORT-MARK\",\"title\":\"t\",\"description\":\"d\",\"maxAgents\":1}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/gateway/tasks/UAT-ABORT-MARK/abort")).andExpect(status().isOk());
+        // The marker lets an orphaned pipeline self-terminate at its next checkpoint.
+        org.junit.jupiter.api.Assertions.assertTrue(
+                java.nio.file.Files.exists(workDir().resolve("UAT-ABORT-MARK").resolve("abort.requested")));
+    }
+
+    @Test
+    void abortTerminalTaskRejected() throws Exception {
+        mvc.perform(post("/gateway/issue").contentType("application/json")
+                        .content("{\"source\":\"web\",\"externalId\":\"UAT-ABORT-DONE\",\"title\":\"t\",\"description\":\"d\",\"maxAgents\":1}"))
+                .andExpect(status().isOk());
+        java.nio.file.Files.writeString(workDir().resolve("UAT-ABORT-DONE").resolve("status.txt"),
+                "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=2026-06-07T10:00:00Z\n");
+        mvc.perform(post("/gateway/tasks/UAT-ABORT-DONE/abort")).andExpect(status().isConflict());
+    }
+
+    @Test
+    void runningPageShowsPauseAndAbortControls() throws Exception {
+        mvc.perform(post("/gateway/issue").contentType("application/json")
+                        .content("{\"source\":\"web\",\"externalId\":\"UAT-CTL\",\"title\":\"t\",\"description\":\"d\",\"maxAgents\":1}"))
+                .andExpect(status().isOk());
+        mvc.perform(get("/gateway/ui/UAT-CTL"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("休息一下")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("停止泡泡")));
+    }
+
+    @Test
+    void pausedPageShowsResumeControl() throws Exception {
+        mvc.perform(post("/gateway/issue").contentType("application/json")
+                        .content("{\"source\":\"web\",\"externalId\":\"UAT-PAUSED\",\"title\":\"t\",\"description\":\"d\",\"maxAgents\":1}"))
+                .andExpect(status().isOk());
+        java.nio.file.Files.writeString(workDir().resolve("UAT-PAUSED").resolve("status.txt"),
+                "STATUS=PAUSED\nMESSAGE=paused_by_user\nUPDATED_AT=2026-06-07T10:00:00Z\n");
+        mvc.perform(get("/gateway/ui/UAT-PAUSED"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("繼續工作")));
+    }
+
+    @Test
+    void abortAwaitingConfirmationRejected() throws Exception {
+        putAwaitingTask("UAT-AB-AWAIT", false);
+        mvc.perform(post("/gateway/tasks/UAT-AB-AWAIT/abort")).andExpect(status().isConflict());
+    }
+
+    @Test
+    void pauseAwaitingConfirmationRejected() throws Exception {
+        putAwaitingTask("UAT-PA-AWAIT", false);
+        mvc.perform(post("/gateway/tasks/UAT-PA-AWAIT/pause")).andExpect(status().isConflict());
+    }
+
+    @Test
+    void resumeNonPausedRejected() throws Exception {
+        mvc.perform(post("/gateway/issue").contentType("application/json")
+                        .content("{\"source\":\"web\",\"externalId\":\"UAT-RES-NO\",\"title\":\"t\",\"description\":\"d\",\"maxAgents\":1}"))
+                .andExpect(status().isOk());
+        // SUBMITTED (not PAUSED) — resume must be rejected.
+        mvc.perform(post("/gateway/tasks/UAT-RES-NO/resume")).andExpect(status().isConflict());
+    }
+
+    @Test
+    void cancelledPageRendersAsTerminalNotLive() throws Exception {
+        mvc.perform(post("/gateway/issue").contentType("application/json")
+                        .content("{\"source\":\"web\",\"externalId\":\"UAT-CANC\",\"title\":\"t\",\"description\":\"d\",\"maxAgents\":1}"))
+                .andExpect(status().isOk());
+        java.nio.file.Files.writeString(workDir().resolve("UAT-CANC").resolve("status.txt"),
+                "STATUS=CANCELLED\nMESSAGE=cancelled_by_user\nUPDATED_AT=2026-06-07T10:00:00Z\n");
+        mvc.perform(get("/gateway/ui/UAT-CANC"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("已停止")))
+                // A stopped task must not be shown as live/running.
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("AI 即時執行紀錄"))))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("休息一下"))));
+    }
+
     private java.nio.file.Path workDir() {
         return java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "ai-factory-webui-test");
     }

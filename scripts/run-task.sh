@@ -11,6 +11,10 @@ BASE="${AI_FACTORY_WORK_DIR:-/opt/ai-jobs}/$TASK_ID"
 WORK="${BASE}/workspace"
 STATUS_FILE="${BASE}/status.txt"
 
+# Clear stale control markers from a previous run of this id, so a fresh run
+# isn't immediately paused/cancelled by a leftover marker.
+rm -f "${BASE}/abort.requested" "${BASE}/pause.requested" 2>/dev/null || true
+
 # Where the pipeline scripts live. Defaults to this script's own directory so
 # the pipeline runs unchanged locally, via docker compose, or in the container
 # (scripts are mounted at /opt/ai-pipeline). Override with AI_FACTORY_PIPELINE_DIR.
@@ -88,9 +92,43 @@ export REPO_URL="${REPO_URL:-}"
 # through every subsequent status write so the gateway/UI can surface the link.
 PR_URL=""
 RESULT_ZIP=""
+# Hard abort: write CANCELLED and stop. Called at every checkpoint so a pipeline
+# the gateway no longer owns (e.g. an orphan after a restart, which an in-process
+# kill can't reach) still self-terminates instead of running to completion.
+_write_cancelled() {
+  local tmp="${STATUS_FILE}.tmp.$$"
+  printf 'STATUS=CANCELLED\nMESSAGE=cancelled_by_user\nUPDATED_AT=%s\n' "$(date -u +%FT%TZ)" > "$tmp"
+  mv -f "$tmp" "$STATUS_FILE"
+}
+
+# Soft pause: if the gateway dropped a pause marker, stop at this checkpoint and
+# wait until it's removed (resume) — or until an abort is requested.
+maybe_pause() {
+  if [ -f "${BASE}/pause.requested" ]; then
+    set_status PAUSED "paused_by_user"
+    while [ -f "${BASE}/pause.requested" ]; do
+      [ -f "${BASE}/abort.requested" ] && break
+      sleep 2
+    done
+  fi
+}
+
 set_status() {
   local status="$1"
   local message="${2:-}"
+  # Every status transition is a checkpoint. Abort wins: stop immediately.
+  if [ "$status" != "CANCELLED" ] && [ -f "${BASE}/abort.requested" ]; then
+    _write_cancelled
+    exit 4
+  fi
+  # Soft-pause checkpoint (except while writing PAUSED itself, via maybe_pause).
+  if [ "$status" != "PAUSED" ] && [ -f "${BASE}/pause.requested" ]; then
+    maybe_pause
+    if [ -f "${BASE}/abort.requested" ]; then   # abort may have ended the wait
+      _write_cancelled
+      exit 4
+    fi
+  fi
   # Write to a temp file then atomically rename, so a reader (the gateway) never
   # sees an empty or half-written status file.
   local tmp="${STATUS_FILE}.tmp.$$"
