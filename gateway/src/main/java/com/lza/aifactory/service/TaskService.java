@@ -263,6 +263,91 @@ public class TaskService {
     }
 
     /**
+     * The last lines of the task's run.log, for the live "what AI is doing now"
+     * feed on the status page. ANSI colour codes are stripped. Returns an empty
+     * list (never empty Optional) when the log isn't there yet, so the polling
+     * frontend can treat "no task" (404 elsewhere) and "no output yet" uniformly.
+     */
+    public java.util.List<String> recentActivity(String taskId, int maxLines) {
+        Path f = workDir.resolve(normalizeTaskId(taskId)).resolve("run.log");
+        if (!Files.exists(f)) return java.util.List.of();
+        try {
+            java.util.List<String> all = Files.readAllLines(f);
+            int from = Math.max(0, all.size() - Math.max(1, maxLines));
+            java.util.List<String> out = new java.util.ArrayList<>();
+            for (String raw : all.subList(from, all.size())) {
+                String clean = redactSecrets(stripAnsi(raw)).stripTrailing();
+                if (!clean.isBlank()) out.add(clean);
+            }
+            return out;
+        } catch (IOException e) {
+            return java.util.List.of();
+        }
+    }
+
+    private static final java.util.regex.Pattern ANSI =
+            java.util.regex.Pattern.compile("\\u001B\\[[0-9;?]*[ -/]*[@-~]");
+
+    private static String stripAnsi(String s) {
+        return ANSI.matcher(s).replaceAll("");
+    }
+
+    // --- Secret redaction for the live activity feed ----------------------------
+    // The feed surfaces the tail of run.log, which can echo credentials a pipeline
+    // command printed (a clone URL with a token, a key=value secret, etc.). These
+    // patterns mask the secret value before it ever leaves the server. Defence in
+    // depth: the log shown is a sanitised view, never the raw bytes.
+
+    // scheme://user:secret@host  ->  scheme://<redacted>@host
+    private static final java.util.regex.Pattern URL_CREDS =
+            java.util.regex.Pattern.compile("([a-zA-Z][a-zA-Z0-9+.\\-]*://)[^/\\s:@]+:[^/\\s@]+@");
+    // Known provider token shapes (GitHub, GitLab, Slack, AWS, OpenAI, Google).
+    private static final java.util.regex.Pattern KNOWN_TOKEN =
+            java.util.regex.Pattern.compile(
+                    "(gh[posru]_[A-Za-z0-9]{16,}"
+                    + "|glpat-[A-Za-z0-9_\\-]{16,}"
+                    + "|xox[baprs]-[A-Za-z0-9\\-]{10,}"
+                    + "|AKIA[0-9A-Z]{16}"
+                    + "|sk-[A-Za-z0-9]{20,}"
+                    + "|AIza[0-9A-Za-z_\\-]{20,})");
+    // An identifier that *contains* a secret word, then = or : and a value, e.g.
+    // AWS_SECRET_ACCESS_KEY=...  or  api-key: ... . Underscore/hyphen tolerant so
+    // env-var-style names are caught even though \b wouldn't fire between words.
+    private static final java.util.regex.Pattern ASSIGN_SECRET =
+            java.util.regex.Pattern.compile(
+                    "(?i)([A-Za-z0-9_\\-]*"
+                    + "(?:secret|token|passwd|password|pwd|api[_-]?key|access[_-]?key|"
+                    + "private[_-]?key|credential)"
+                    + "[A-Za-z0-9_\\-]*)(\\s*[:=]\\s*)(?:Bearer\\s+|Basic\\s+)?\\S+");
+    // An `authorization` / `auth` key (whole word, so `author`/`oauth_state` are
+    // left alone) followed by : or = — mask the whole value.
+    private static final java.util.regex.Pattern AUTH_HEADER =
+            java.util.regex.Pattern.compile("(?i)\\b(authorization|auth)\\b(\\s*[:=]\\s*).+");
+    // Bearer/Basic <token> anywhere; token long enough that it isn't prose.
+    private static final java.util.regex.Pattern BEARER =
+            java.util.regex.Pattern.compile("(?i)\\b(bearer|basic)\\s+[A-Za-z0-9._+/=\\-]{8,}");
+    // A bare 40-char AWS secret access key. Requires at least one + or / so a
+    // 40-hex git SHA (which never contains + or /) is never matched.
+    private static final java.util.regex.Pattern AWS_SECRET_BARE =
+            java.util.regex.Pattern.compile(
+                    "(?<![A-Za-z0-9+/])(?=[A-Za-z0-9+/]{40}(?![A-Za-z0-9+/]))"
+                    + "[A-Za-z0-9+/]*[+/][A-Za-z0-9+/]*");
+    // Host home directory: /Users/<name>/...  ->  /Users/<user>/... (hide the OS account)
+    private static final java.util.regex.Pattern HOME_PATH =
+            java.util.regex.Pattern.compile("(/Users/|/home/)[^/\\s]+");
+
+    private static String redactSecrets(String line) {
+        String s = URL_CREDS.matcher(line).replaceAll("$1<redacted>@");
+        s = KNOWN_TOKEN.matcher(s).replaceAll("<redacted>");
+        s = ASSIGN_SECRET.matcher(s).replaceAll("$1$2<redacted>");
+        s = AUTH_HEADER.matcher(s).replaceAll("$1$2<redacted>");
+        s = BEARER.matcher(s).replaceAll("$1 <redacted>");
+        s = AWS_SECRET_BARE.matcher(s).replaceAll("<redacted>");
+        s = HOME_PATH.matcher(s).replaceAll("$1<user>");
+        return s;
+    }
+
+    /**
      * Write the approve/cancel marker the waiting pipeline polls for. Atomic
      * (temp + rename). The bash loop treats cancel as winning over approve.
      */

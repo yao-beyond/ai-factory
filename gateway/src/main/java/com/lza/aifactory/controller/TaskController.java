@@ -49,6 +49,18 @@ public class TaskController {
         return taskService.listTasks();
     }
 
+    /**
+     * Live "what is the AI doing right now" feed: the tail of the task's run.log.
+     * The status page polls this so a user can watch real progress instead of a
+     * frozen progress bar. Always 200 (empty lines when there's no output yet),
+     * so the poller never has to special-case a missing log.
+     */
+    @GetMapping("/activity/{taskId}")
+    public ResponseEntity<Map<String, Object>> activity(@PathVariable String taskId) {
+        List<String> lines = taskService.recentActivity(taskId, 24);
+        return ResponseEntity.ok(Map.of("taskId", taskId, "lines", lines));
+    }
+
     /** Download the generated project (local/new-project mode) as a zip. */
     @GetMapping("/result/{taskId}")
     public ResponseEntity<Resource> result(@PathVariable String taskId) {
@@ -158,8 +170,11 @@ public class TaskController {
         boolean failed = s == TaskStatus.FAILED;
         boolean awaiting = s == TaskStatus.AWAITING_CONFIRMATION;
         boolean done = s == TaskStatus.COMPLETED || failed;
-        // Hold still while waiting for the user's decision; auto-refresh otherwise.
-        String refresh = (done || awaiting) ? "" : "<meta http-equiv=\"refresh\" content=\"3\">";
+        boolean running = !done && !awaiting;
+        // No meta-refresh: while running we drive updates with JS (a live activity
+        // feed plus reload-on-stage-change), which a 3s full-page refresh would
+        // otherwise wipe. Done/awaiting pages are static anyway.
+        String refresh = "";
         String barColor = failed ? "#e5484d"
                 : (s == TaskStatus.COMPLETED ? "#30a46c" : (awaiting ? "#d29922" : "#3b82f6"));
 
@@ -207,6 +222,15 @@ public class TaskController {
                 .meta{margin-top:22px;font-size:13px;color:#656d76;border-top:1px solid #eaeef2;padding-top:16px;}
                 .meta div{margin:4px 0;}
                 a{color:#0969da;}
+                .activity{margin-top:22px;}
+                .act-head{font-size:13px;color:#656d76;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+                .live{color:#fff;background:#e5484d;font-size:11px;font-weight:700;
+                      padding:1px 8px;border-radius:999px;animation:blink 1.4s ease-in-out infinite;}
+                @keyframes blink{0%%,100%%{opacity:1}50%%{opacity:.35}}
+                .feed{background:#0d1117;color:#c9d1d9;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+                      font-size:12px;line-height:1.55;padding:14px 16px;border-radius:10px;height:240px;
+                      overflow-y:auto;white-space:pre-wrap;word-break:break-word;margin:0;border:1px solid #30363d;}
+                .feed .ph{color:#8b949e;}
               </style>
             </head>
             <body>
@@ -217,6 +241,7 @@ public class TaskController {
                 <p class="msg">%s</p>
                 <div class="bar"><div class="fill"></div></div>
                 <div class="pct">%d%%</div>
+                %s
                 %s
                 %s
                 <div class="meta">
@@ -237,6 +262,7 @@ public class TaskController {
                 s.progress(),
                 resultBlock(r),
                 etaBlock(r),
+                activityBlock(r, running),
                 esc(orDash(r.title())),
                 esc(formatLocalTime(r.updatedAt())));
     }
@@ -255,6 +281,47 @@ public class TaskController {
         if (minutes < 60) return "約 " + minutes + " 分鐘";
         long hours = (minutes + 59) / 60;
         return "約 " + hours + " 小時";
+    }
+
+    /**
+     * Live "what is the AI doing right now" panel. Only rendered while the task
+     * is running; it polls /gateway/activity for the run.log tail (smooth, in
+     * place) and /gateway/status to reload the page when the stage changes.
+     */
+    private String activityBlock(TaskRecord r, boolean running) {
+        if (!running) return "";
+        String id = esc(r.taskId());
+        String status = r.status().name();
+        return """
+            <div class="activity">
+              <div class="act-head">🔧 AI 即時執行紀錄 <span class="live">● LIVE</span></div>
+              <pre id="feed" class="feed"><span class="ph">正在接上 AI 的工作畫面…</span></pre>
+            </div>
+            <script>
+              (function(){
+                var id = "%s";
+                var feed = document.getElementById('feed');
+                var lastStatus = "%s";
+                function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+                function loadActivity(){
+                  fetch('/gateway/activity/'+id).then(function(r){return r.json();}).then(function(d){
+                    if(!d || !d.lines || !d.lines.length) return;
+                    var atBottom = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 28;
+                    feed.innerHTML = d.lines.map(esc).join('\\n');
+                    if(atBottom){ feed.scrollTop = feed.scrollHeight; }
+                  }).catch(function(){});
+                }
+                function checkStatus(){
+                  fetch('/gateway/status/'+id).then(function(r){return r.json();}).then(function(d){
+                    if(d && d.status && d.status !== lastStatus){ location.reload(); }
+                  }).catch(function(){});
+                }
+                loadActivity();
+                setInterval(loadActivity, 2000);
+                setInterval(checkStatus, 3000);
+              })();
+            </script>
+            """.formatted(id, status);
     }
 
     /** Plain-language "what now" block shown when the task finishes (or waits). */

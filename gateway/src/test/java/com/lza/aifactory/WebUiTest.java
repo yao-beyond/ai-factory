@@ -350,6 +350,149 @@ class WebUiTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("預計還要")));
     }
 
+    private void putRunningTaskWithLog(String id, String log) throws Exception {
+        String body = "{\"source\":\"web\",\"externalId\":\"" + id
+                + "\",\"title\":\"進行中需求\",\"description\":\"請做這件事\",\"maxAgents\":1}";
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Path dir = workDir().resolve(id);
+        java.nio.file.Files.createDirectories(dir);
+        java.nio.file.Files.writeString(dir.resolve("status.txt"),
+                "STATUS=DEVELOPING\nMESSAGE=spawning 3 dev agents\nUPDATED_AT=now\n");
+        java.nio.file.Files.writeString(dir.resolve("run.log"), log);
+    }
+
+    @Test
+    void inProgressPageShowsLiveActivityFeed() throws Exception {
+        putRunningTaskWithLog("UAT-FEED", "AI 正在開發…\n");
+        mvc.perform(get("/gateway/ui/UAT-FEED"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("AI 即時執行紀錄")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"feed\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("var id = \"UAT-FEED\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("loadActivity")))
+                // Running pages drive updates with JS, not a full-page meta refresh.
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("http-equiv=\"refresh\""))));
+    }
+
+    @Test
+    void completedPageHasNoLiveActivityFeed() throws Exception {
+        String body = """
+                {"source":"web","externalId":"UAT-NOFEED","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Path dir = workDir().resolve("UAT-NOFEED");
+        java.nio.file.Files.createDirectories(dir);
+        java.nio.file.Files.writeString(dir.resolve("status.txt"), "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=now\n");
+        java.nio.file.Files.writeString(dir.resolve("run.log"), "some log line\n");
+        mvc.perform(get("/gateway/ui/UAT-NOFEED"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("AI 即時執行紀錄"))));
+    }
+
+    @Test
+    void activityEndpointStripsAnsiButKeepsGitBrackets() throws Exception {
+        // A real ANSI colour code wraps the first line; the second is git output
+        // whose literal [brackets] must survive.
+        String log = "\u001B[32mGREENLINE\u001B[0m\n[ai/UAT-ACT/dev-1 abc123] feat: implement candidate 1\n";
+        putRunningTaskWithLog("UAT-ACT", log);
+        String json = mvc.perform(get("/gateway/activity/UAT-ACT"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        // Visible text survives; ANSI fragments are gone.
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("GREENLINE"));
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("[32m"));
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("[0m"));
+        org.junit.jupiter.api.Assertions.assertFalse(json.toLowerCase().contains("u001b"));
+        // Literal git bracket output is preserved (the ESC-anchored regex must not eat it).
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("[ai/UAT-ACT/dev-1 abc123]"));
+    }
+
+    @Test
+    void activityEndpointReturnsEmptyLinesWhenNoLogYet() throws Exception {
+        String body = """
+                {"source":"web","externalId":"UAT-NOLOG","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        mvc.perform(get("/gateway/activity/UAT-NOLOG"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"lines\":[]")));
+    }
+
+    @Test
+    void activityFeedRedactsSecrets() throws Exception {
+        // run.log can echo credentials a pipeline command printed. The feed must
+        // surface a sanitised view, never the raw secret bytes.
+        String log = String.join("\n",
+                "cloning https://oscar:ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345@github.com/acme/app.git",
+                "export GITHUB_TOKEN=ghp_ZYXWVUTSRQPONMLKJIHGFEDCBA987654",
+                "Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz0123456789",
+                "password=hunter2supersecret",
+                "writing to /Users/oscar/secret/path/file.txt",
+                "");
+        putRunningTaskWithLog("UAT-REDACT", log);
+        String json = mvc.perform(get("/gateway/activity/UAT-REDACT"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        // No secret value survives.
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"));
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("ghp_ZYXWVUTSRQPONMLKJIHGFEDCBA987654"));
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("sk-abcdefghijklmnopqrstuvwxyz0123456789"));
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("hunter2supersecret"));
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("oscar:"));      // URL userinfo gone
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("/Users/oscar")); // OS account masked
+        // Non-secret context is preserved so the feed is still useful.
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("github.com/acme/app.git"));
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("<redacted>"));
+    }
+
+    @Test
+    void activityFeedRedactsAwsSecretKeys() throws Exception {
+        String log = String.join("\n",
+                "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+                "aws_secret_access_key = abcdEFGH1234ijklMNOP5678qrstUVWX90+/abcd",
+                "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE",
+                "commit 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9012 landed",
+                "");
+        putRunningTaskWithLog("UAT-AWS", log);
+        String json = mvc.perform(get("/gateway/activity/UAT-AWS"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        // Secret access keys (env-var form and AWS CLI config form) are masked.
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"));
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("abcdEFGH1234ijklMNOP5678qrstUVWX90+/abcd"));
+        // Access key id is masked too.
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("AKIAIOSFODNN7EXAMPLE"));
+        // A 40-hex git SHA is NOT a secret and must stay visible (no + or /).
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9012"));
+        // The label stays so the line is still informative.
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("AWS_SECRET_ACCESS_KEY=<redacted>"));
+    }
+
+    @Test
+    void activityFeedMasksAuthKeyButNotLookalikes() throws Exception {
+        String log = String.join("\n",
+                "auth=topSecretValue123",
+                "auth: anotherSecretValue",
+                "author=Bob Smith",     // 'author' is not the whole word 'auth'
+                "oauth_state=xyz123",   // 'oauth' is not the whole word 'auth'
+                "");
+        putRunningTaskWithLog("UAT-AUTH", log);
+        String json = mvc.perform(get("/gateway/activity/UAT-AUTH"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        // The auth key's value is masked (regression guard).
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("topSecretValue123"));
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("anotherSecretValue"));
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("auth=<redacted>"));
+        // Look-alike identifiers keep their (non-secret) values.
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("Bob Smith"));
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("xyz123"));
+    }
+
     private java.nio.file.Path workDir() {
         return java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "ai-factory-webui-test");
     }
