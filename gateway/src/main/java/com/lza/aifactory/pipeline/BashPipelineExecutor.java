@@ -11,7 +11,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Default executor: runs the bash pipeline (run-task.sh) as a local process,
@@ -24,6 +28,10 @@ public class BashPipelineExecutor implements PipelineExecutor {
     private static final Logger log = LoggerFactory.getLogger(BashPipelineExecutor.class);
 
     private final String pipelineScript;
+    // Live pipeline processes, so a task can be aborted after it starts.
+    private final Map<String, Process> running = new ConcurrentHashMap<>();
+    // Tasks the user aborted: makes reconcile finalize to CANCELLED, not FAILED.
+    private final Set<String> abortRequested = ConcurrentHashMap.newKeySet();
 
     public BashPipelineExecutor(@Value("${ai-factory.pipeline-script}") String pipelineScript) {
         this.pipelineScript = pipelineScript;
@@ -39,12 +47,45 @@ public class BashPipelineExecutor implements PipelineExecutor {
         applyEnv(pb.environment(), request.taskId(), request.env());
 
         Process process = pb.start();
+        running.put(request.taskId(), process);
         log.info("Started bash pipeline for taskId={} script={}", request.taskId(), pipelineScript);
 
         // Safety net: if the process dies non-zero without leaving a terminal
         // status (crash, OOM, SIGKILL — cases the bash ERR trap can miss), the
-        // task would otherwise hang forever as "in progress". Reconcile to FAILED.
-        process.onExit().thenAccept(p -> reconcile(request.taskId(), taskDir, p.exitValue()));
+        // task would otherwise hang forever as "in progress". Reconcile to FAILED
+        // (or CANCELLED if the user aborted it).
+        process.onExit().thenAccept(p -> {
+            running.remove(request.taskId());
+            reconcile(request.taskId(), taskDir, p.exitValue());
+        });
+    }
+
+    /**
+     * Abort a running task: kill its whole process tree (the bash leader plus the
+     * claude/codex/git children it spawned). macOS has no {@code setsid}, so we
+     * walk {@link Process#descendants()} — children first, then the leader — and
+     * escalate from destroy() to destroyForcibly() after a short grace period.
+     */
+    @Override
+    public boolean abort(String taskId) {
+        abortRequested.add(taskId);   // so reconcile writes CANCELLED, not FAILED
+        Process p = running.get(taskId);
+        if (p == null) {
+            return false;             // not owned here (e.g. started before a restart)
+        }
+        List<ProcessHandle> kids = p.descendants().toList();
+        kids.forEach(ProcessHandle::destroy);
+        p.destroy();
+        try {
+            if (!p.waitFor(5, TimeUnit.SECONDS)) {
+                kids.forEach(ProcessHandle::destroyForcibly);
+                p.destroyForcibly();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        log.info("Aborted pipeline for taskId={} (killed {} descendant process(es))", taskId, kids.size());
+        return true;
     }
 
     /**
@@ -60,21 +101,24 @@ public class BashPipelineExecutor implements PipelineExecutor {
     }
 
     private void reconcile(String taskId, Path taskDir, int exitCode) {
+        boolean aborted = abortRequested.remove(taskId);
         // A clean (zero) exit means run-task.sh ran to the end and already wrote a
-        // terminal status; nothing to do.
-        if (exitCode == 0) return;
+        // terminal status; nothing to do — unless the user aborted it.
+        if (exitCode == 0 && !aborted) return;
         Path statusFile = taskDir.resolve("status.txt");
         try {
             String status = readStatus(statusFile);
-            if ("COMPLETED".equals(status) || "FAILED".equals(status)) return;
-            String body = "STATUS=FAILED\n"
-                    + "MESSAGE=process_exited_rc:" + exitCode + "\n"
+            if ("COMPLETED".equals(status) || "FAILED".equals(status) || "CANCELLED".equals(status)) return;
+            // User abort wins: it's a decision, not a failure.
+            String terminal = aborted ? "CANCELLED" : "FAILED";
+            String message = aborted ? "cancelled_by_user" : ("process_exited_rc:" + exitCode);
+            String body = "STATUS=" + terminal + "\n"
+                    + "MESSAGE=" + message + "\n"
                     + "UPDATED_AT=" + Instant.now() + "\n";
             Path tmp = taskDir.resolve("status.txt.tmp");
             Files.writeString(tmp, body);
             Files.move(tmp, statusFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            log.warn("Reconciled taskId={} to FAILED (process exited rc={} without a terminal status)",
-                    taskId, exitCode);
+            log.warn("Reconciled taskId={} to {} (process exited rc={})", taskId, terminal, exitCode);
         } catch (IOException e) {
             log.warn("Could not reconcile status for taskId={}: {}", taskId, e.getMessage());
         }

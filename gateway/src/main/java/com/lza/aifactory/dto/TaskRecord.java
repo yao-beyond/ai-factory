@@ -34,7 +34,8 @@ public record TaskRecord(
     }
 
     public boolean terminal() {
-        return status == TaskStatus.COMPLETED || status == TaskStatus.FAILED;
+        return status == TaskStatus.COMPLETED || status == TaskStatus.FAILED
+                || status == TaskStatus.CANCELLED;
     }
 
     /**

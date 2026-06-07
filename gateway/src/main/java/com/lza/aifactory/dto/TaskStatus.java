@@ -16,7 +16,9 @@ public enum TaskStatus {
     REVIEWING("🔍", "程式碼品質與安全檢查", 85),
     FIXING("🛠️", "依審查建議修正中", 95),
     COMPLETED("✅", "開發完成", 100),
-    FAILED("⚠️", "發生問題，需要人工查看", 100);
+    FAILED("⚠️", "發生問題，需要人工查看", 100),
+    PAUSED("⏸️", "已暫停，等你說繼續", 50),
+    CANCELLED("🛑", "已停止（沒有產生任何變更）", 100);
 
     private final String emoji;
     private final String displayName;

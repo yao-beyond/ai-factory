@@ -422,6 +422,80 @@ public class TaskService {
         }
     }
 
+    /**
+     * Abort a running task: kill its pipeline process tree and finalize to
+     * CANCELLED (a user decision, never FAILED). Terminal tasks can't be aborted.
+     */
+    public boolean abortTask(String taskId) {
+        String id = normalizeTaskId(taskId);
+        TaskRecord r = findStatus(id).orElse(null);
+        // AWAITING_CONFIRMATION is a wait-for-human state with its own cancel path
+        // (the confirm gate); it isn't an actively-running task to abort here.
+        if (r == null || r.terminal() || r.status() == TaskStatus.AWAITING_CONFIRMATION) return false;
+        Path dir = workDir.resolve(id);
+        // Drop an abort marker FIRST: a pipeline this process no longer owns (an
+        // orphan after a restart, which the in-process kill below can't reach)
+        // self-terminates at its next checkpoint — so abort can't report success
+        // while the task keeps running.
+        try {
+            Files.writeString(dir.resolve("abort.requested"), Instant.now().toString());
+        } catch (IOException ignored) {
+        }
+        pipelineExecutor.abort(id);   // immediate kill for a process we still own
+        try {
+            Files.deleteIfExists(dir.resolve("pause.requested"));   // let a paused one reach the abort check
+        } catch (IOException ignored) {
+        }
+        try {
+            // Record the decision immediately; the executor's onExit guard agrees
+            // and won't overwrite. Also covers the not-running-here (restart) case.
+            writeStatus(dir, TaskStatus.CANCELLED, "cancelled_by_user");
+        } catch (IOException e) {
+            log.warn("Aborted {} but could not write CANCELLED status: {}", id, e.getMessage());
+        }
+        return true;
+    }
+
+    /**
+     * Soft pause: drop a marker the running pipeline checks at stage boundaries.
+     * It isn't instant — the task pauses at its next checkpoint. Resumable.
+     */
+    public boolean pauseTask(String taskId) {
+        String id = normalizeTaskId(taskId);
+        TaskRecord r = findStatus(id).orElse(null);
+        // Not terminal, not already paused, and not waiting on the user (the
+        // confirm gate is its own thing — pausing it is meaningless).
+        if (r == null || r.terminal()
+                || r.status() == TaskStatus.PAUSED
+                || r.status() == TaskStatus.AWAITING_CONFIRMATION) return false;
+        try {
+            Files.writeString(workDir.resolve(id).resolve("pause.requested"), Instant.now().toString());
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Resume by removing the pause marker. Valid when the task is PAUSED, or when
+     * a pause was requested but hasn't taken effect yet (marker present) — both
+     * mean "undo the pause". Rejected when there's nothing to resume.
+     */
+    public boolean resumeTask(String taskId) {
+        String id = normalizeTaskId(taskId);
+        TaskRecord r = findStatus(id).orElse(null);
+        if (r == null || r.terminal()) return false;
+        Path marker = workDir.resolve(id).resolve("pause.requested");
+        boolean pending = Files.exists(marker);
+        if (r.status() != TaskStatus.PAUSED && !pending) return false;
+        try {
+            Files.deleteIfExists(marker);
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
     public Optional<TaskRecord> findStatus(String taskId) {
         String id = normalizeTaskId(taskId);
         if (deletedTaskIds.contains(id)) return Optional.empty();
@@ -456,12 +530,15 @@ public class TaskService {
             // Feed the ETA estimator the moment a task first reaches a terminal state.
             if (record.status() != parsed) {
                 if (parsed == TaskStatus.COMPLETED) etaService.onCompleted(record.taskId());
-                else if (parsed == TaskStatus.FAILED) etaService.forget(record.taskId());
+                else if (parsed == TaskStatus.FAILED || parsed == TaskStatus.CANCELLED) {
+                    etaService.forget(record.taskId());
+                }
             }
             // Stamp the completion time once, from the pipeline's own terminal
             // timestamp (COMPLETED_AT, else UPDATED_AT), and persist it so a restart
             // keeps an accurate elapsed-time.
-            boolean terminal = parsed == TaskStatus.COMPLETED || parsed == TaskStatus.FAILED;
+            boolean terminal = parsed == TaskStatus.COMPLETED || parsed == TaskStatus.FAILED
+                    || parsed == TaskStatus.CANCELLED;
             Instant completedAt = record.completedAt();
             if (terminal && completedAt == null) {
                 completedAt = parseInstant(kv.get("COMPLETED_AT"));
