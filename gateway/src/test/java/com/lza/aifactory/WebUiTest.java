@@ -93,6 +93,17 @@ class WebUiTest {
     }
 
     @Test
+    void importFolderRejectedByDefault() throws Exception {
+        // Local-folder import (sourcePath) is OFF unless importRootDir is configured,
+        // so an API caller can't copy arbitrary host directories into a result.
+        String body = """
+                {"source":"web","mode":"import","sourcePath":"/etc","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void importRejectsMissingFile() throws Exception {
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                         .multipart("/gateway/import")

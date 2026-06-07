@@ -117,6 +117,10 @@ public class TaskService {
 
     private TaskRecord submitInternal(IssueDto dto, SeedAction seed) throws IOException {
         validateRepoAllowed(dto.getRepo());
+        if ("import".equalsIgnoreCase(dto.getMode())
+                && dto.getSourcePath() != null && !dto.getSourcePath().isBlank()) {
+            dto.setSourcePath(validateImportSourcePath(dto.getSourcePath()));
+        }
 
         String taskId = normalizeTaskId(
                 dto.getExternalId() == null || dto.getExternalId().isBlank()
@@ -369,6 +373,30 @@ public class TaskService {
      * Short repo names (resolved server-side from config) and an empty allowlist
      * are not blocked here.
      */
+    /**
+     * Local-folder import is off unless security.importRootDir is configured, and
+     * the path must resolve (real path, following symlinks) inside that root — so
+     * an API caller can never copy arbitrary host directories into a result.
+     * Returns the canonical path to use.
+     */
+    private String validateImportSourcePath(String sourcePath) {
+        String root = properties.getSecurity().getImportRootDir();
+        if (root == null || root.isBlank()) {
+            throw new IllegalArgumentException(
+                    "本機資料夾匯入未啟用（請設定 security.importRootDir，或改用上傳 zip）。");
+        }
+        try {
+            Path base = Path.of(root).toRealPath();
+            Path src = Path.of(sourcePath).toRealPath();
+            if (!Files.isDirectory(src) || !src.startsWith(base)) {
+                throw new IllegalArgumentException("sourcePath 必須是 " + root + " 之內的資料夾。");
+            }
+            return src.toString();
+        } catch (IOException e) {
+            throw new IllegalArgumentException("找不到指定的資料夾：" + sourcePath);
+        }
+    }
+
     private void validateRepoAllowed(String repo) {
         if (repo == null || repo.isBlank() || !isUrlLike(repo)) return;
         if (allowRepositories.isEmpty()) return;

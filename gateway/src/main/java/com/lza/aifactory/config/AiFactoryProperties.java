@@ -83,6 +83,10 @@ public class AiFactoryProperties {
         // confirm before the AI starts building.
         private boolean confirmBeforeBuild = true;
         private int confirmationTimeoutMinutes = 30;
+        // Local-folder import (mode=import + sourcePath) is DISABLED unless this is
+        // set to a base directory; sourcePath must resolve inside it. Empty = off,
+        // so an API caller can't copy arbitrary host directories into a result.
+        private String importRootDir = "";
         public List<String> getAllowRepositories() { return allowRepositories; }
         public void setAllowRepositories(List<String> allowRepositories) { this.allowRepositories = allowRepositories; }
         public List<String> getProtectedBranches() { return protectedBranches; }
@@ -97,6 +101,8 @@ public class AiFactoryProperties {
         public void setConfirmBeforeBuild(boolean confirmBeforeBuild) { this.confirmBeforeBuild = confirmBeforeBuild; }
         public int getConfirmationTimeoutMinutes() { return confirmationTimeoutMinutes; }
         public void setConfirmationTimeoutMinutes(int m) { this.confirmationTimeoutMinutes = m; }
+        public String getImportRootDir() { return importRootDir; }
+        public void setImportRootDir(String importRootDir) { this.importRootDir = importRootDir; }
     }
 
     public static class Secrets {

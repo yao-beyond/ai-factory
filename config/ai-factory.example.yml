@@ -56,6 +56,10 @@ security:
   confirmBeforeBuild: true
   # How long to wait for that confirmation before failing the task.
   confirmationTimeoutMinutes: 30
+  # Local-folder import (mode=import + sourcePath) is OFF by default. Only set
+  # this to a base directory if you want to allow importing from local folders;
+  # a sourcePath must then resolve inside it. (Zip upload import is always safe.)
+  importRootDir: ""
 
 # How secrets are resolved. `env` reads them from environment variables.
 secrets:
