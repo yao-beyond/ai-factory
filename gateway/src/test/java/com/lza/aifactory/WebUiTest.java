@@ -578,6 +578,116 @@ class WebUiTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("請先確認開工方向")));
     }
 
+    @Test
+    void perTaskPageHasHomeAndAllTasksNav() throws Exception {
+        String body = """
+                {"source":"web","externalId":"UAT-NAV","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        mvc.perform(get("/gateway/ui/UAT-NAV"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("返回首頁")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("所有任務")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("href=\"/gateway/ui\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("href=\"/\"")));
+    }
+
+    @Test
+    void tasksListPageHasHomeButton() throws Exception {
+        mvc.perform(get("/gateway/ui"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("返回首頁")));
+    }
+
+    @Test
+    void listPageShowsTimingColumnsAndSortLinks() throws Exception {
+        mvc.perform(get("/gateway/ui"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("建立時間")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("耗時")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("完成時間")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("sort=duration")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("sort=completedAt")));
+    }
+
+    @Test
+    void deleteCompletedTaskRemovesItAndFiles() throws Exception {
+        String body = """
+                {"source":"web","externalId":"UAT-DEL","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Path dir = workDir().resolve("UAT-DEL");
+        java.nio.file.Files.writeString(dir.resolve("status.txt"),
+                "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=2026-06-07T10:00:00Z\n");
+        mvc.perform(post("/gateway/tasks/UAT-DEL/delete")).andExpect(status().isOk());
+        mvc.perform(get("/gateway/status/UAT-DEL")).andExpect(status().isNotFound());
+        org.junit.jupiter.api.Assertions.assertFalse(java.nio.file.Files.exists(dir));
+    }
+
+    @Test
+    void deleteNonTerminalTaskRejected() throws Exception {
+        String body = """
+                {"source":"web","externalId":"UAT-DEL-RUN","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        // Still SUBMITTED (noop pipeline) — not terminal, must not be deletable.
+        mvc.perform(post("/gateway/tasks/UAT-DEL-RUN/delete")).andExpect(status().isConflict());
+    }
+
+    @Test
+    void paginationPagerAppearsAndPageParamWorks() throws Exception {
+        for (int i = 0; i < 21; i++) {
+            String body = "{\"source\":\"web\",\"externalId\":\"UAT-PG-" + i
+                    + "\",\"title\":\"t" + i + "\",\"description\":\"d\",\"maxAgents\":1}";
+            mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                    .andExpect(status().isOk());
+        }
+        // 21+ tasks total → at least 2 pages.
+        mvc.perform(get("/gateway/ui"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("第 1 /")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("下一頁")));
+        mvc.perform(get("/gateway/ui?sort=submittedAt&dir=desc&page=2"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void taskIdNeverResolvesToWorkDirRoot() throws Exception {
+        // An externalId of "." must not produce a task whose directory IS the work
+        // dir (which a later delete would wipe entirely).
+        String json = mvc.perform(post("/gateway/issue").contentType("application/json")
+                        .content("{\"source\":\"web\",\"externalId\":\".\",\"title\":\"t\",\"description\":\"d\",\"maxAgents\":1}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String taskId = com.jayway.jsonpath.JsonPath.read(json, "$.taskId");
+        org.junit.jupiter.api.Assertions.assertNotEquals(".", taskId);
+        org.junit.jupiter.api.Assertions.assertFalse(taskId.isBlank());
+        // Task files must land in a SUBDIR, never directly in the work dir root.
+        org.junit.jupiter.api.Assertions.assertFalse(
+                java.nio.file.Files.exists(workDir().resolve("issue.json")),
+                "task files must not be written to the work dir root");
+    }
+
+    @Test
+    void resubmittingDeletedIdMakesItVisibleAgain() throws Exception {
+        mvc.perform(post("/gateway/issue").contentType("application/json")
+                        .content("{\"source\":\"web\",\"externalId\":\"UAT-REUSE\",\"title\":\"first\",\"description\":\"d\",\"maxAgents\":1}"))
+                .andExpect(status().isOk());
+        java.nio.file.Files.writeString(workDir().resolve("UAT-REUSE").resolve("status.txt"),
+                "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=2026-06-07T10:00:00Z\n");
+        mvc.perform(post("/gateway/tasks/UAT-REUSE/delete")).andExpect(status().isOk());
+        mvc.perform(get("/gateway/status/UAT-REUSE")).andExpect(status().isNotFound());
+        // Re-submitting the SAME external id must clear the tombstone and show it.
+        mvc.perform(post("/gateway/issue").contentType("application/json")
+                        .content("{\"source\":\"web\",\"externalId\":\"UAT-REUSE\",\"title\":\"second\",\"description\":\"d2\",\"maxAgents\":1}"))
+                .andExpect(status().isOk());
+        mvc.perform(get("/gateway/status/UAT-REUSE"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("UAT-REUSE")));
+    }
+
     private java.nio.file.Path workDir() {
         return java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "ai-factory-webui-test");
     }

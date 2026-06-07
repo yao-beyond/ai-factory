@@ -61,6 +61,18 @@ public class TaskController {
         return ResponseEntity.ok(Map.of("taskId", taskId, "lines", lines));
     }
 
+    /** Delete a finished task (record + its work dir). Only terminal tasks. */
+    @PostMapping("/tasks/{taskId}/delete")
+    public ResponseEntity<?> deleteTask(@PathVariable String taskId) {
+        boolean ok = taskService.deleteTask(taskId);
+        if (!ok) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", "not_deletable",
+                            "message", "只能刪除已完成或已結束的任務"));
+        }
+        return ResponseEntity.ok(Map.of("taskId", taskId, "deleted", true));
+    }
+
     /** Download the generated project (local/new-project mode) as a zip. */
     @GetMapping("/result/{taskId}")
     public ResponseEntity<Resource> result(@PathVariable String taskId) {
@@ -221,6 +233,10 @@ public class TaskController {
                 .btn{display:inline-block;margin:12px 0 4px;background:#1f883d;color:#fff;
                      text-decoration:none;padding:11px 18px;border-radius:8px;font-weight:600;}
                 .meta{margin-top:22px;font-size:13px;color:#656d76;border-top:1px solid #eaeef2;padding-top:16px;}
+                .nav{display:flex;gap:10px;margin-top:18px;}
+                .nav a{flex:1;text-align:center;text-decoration:none;border:1px solid #d0d7de;
+                       border-radius:8px;padding:10px;font-size:14px;color:#1f2328;background:#f6f8fa;}
+                .nav a:hover{background:#eef1f4;}
                 .meta div{margin:4px 0;}
                 a{color:#0969da;}
                 .activity{margin-top:22px;}
@@ -248,6 +264,10 @@ public class TaskController {
                 <div class="meta">
                   <div>📝 你的需求：%s</div>
                   <div>🕒 更新時間：%s（UTC+8）</div>
+                </div>
+                <div class="nav">
+                  <a href="/">🏠 返回首頁</a>
+                  <a href="/gateway/ui">📋 所有任務</a>
                 </div>
               </div>
             </body>
