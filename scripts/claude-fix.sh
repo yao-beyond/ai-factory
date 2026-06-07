@@ -4,11 +4,15 @@ set -euo pipefail
 TASK_ID="${1:?TASK_ID required}"
 FINAL_BRANCH="ai/${TASK_ID}/final"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/lib/ai-retry.sh"
+
 git checkout "$FINAL_BRANCH"
 
 CLAUDE="${CLAUDE_BIN:-$(command -v claude 2>/dev/null || command -v claude-code 2>/dev/null || true)}"
 if [ -n "$CLAUDE" ]; then
-  "$CLAUDE" -p --permission-mode acceptEdits <<'PROMPT'
+  aif_ai_retry 3 20 -- "$CLAUDE" -p --permission-mode acceptEdits <<'PROMPT'
 你是 Claude Code 修復工程師。
 
 請根據 docs/ai/CODEX_REVIEW.md 修正問題。

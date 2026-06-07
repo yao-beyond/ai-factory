@@ -6,6 +6,10 @@ TARGET_BRANCH="${TARGET_BRANCH:-main}"
 PLAN_BRANCH="ai/${TASK_ID}/plan"
 FINAL_BRANCH="ai/${TASK_ID}/final"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/lib/ai-retry.sh"
+
 git checkout "$FINAL_BRANCH"
 if [ "${PROJECT_MODE:-existing}" = "local" ]; then
   # No remote in local mode: diff the final against the plan (or target) branch.
@@ -20,7 +24,7 @@ fi
 mkdir -p docs/ai
 CODEX="${CODEX_BIN:-$(command -v codex 2>/dev/null || true)}"
 if [ -n "$CODEX" ]; then
-  "$CODEX" exec --skip-git-repo-check --color never -o docs/ai/CODEX_REVIEW.md - <<'PROMPT'
+  aif_ai_retry 3 20 -- "$CODEX" exec --skip-git-repo-check --color never -o docs/ai/CODEX_REVIEW.md - <<'PROMPT'
 請 review 目前 MR diff（已輸出至 /tmp/diff-*.patch）。
 
 請特別檢查：

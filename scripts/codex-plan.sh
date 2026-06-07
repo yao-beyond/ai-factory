@@ -12,6 +12,10 @@ PLAN_SUMMARY_FILE="${2:-}"
 TASK_ID="${TASK_ID:-$(basename "$(dirname "$ISSUE_FILE")")}"
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/lib/ai-retry.sh"
+
 mkdir -p docs/ai
 cp "$ISSUE_FILE" docs/ai/issue.json
 
@@ -19,7 +23,7 @@ cp "$ISSUE_FILE" docs/ai/issue.json
 CODEX="${CODEX_BIN:-$(command -v codex 2>/dev/null || true)}"
 
 if [ -n "$CODEX" ]; then
-  "$CODEX" exec --skip-git-repo-check --color never -o docs/ai/IMPLEMENTATION_PLAN.md - <<'PROMPT'
+  aif_ai_retry 3 20 -- "$CODEX" exec --skip-git-repo-check --color never -o docs/ai/IMPLEMENTATION_PLAN.md - <<'PROMPT'
 你是資深交易系統架構師與技術主管。
 
 請根據 docs/ai/issue.json 的需求產生實作計畫，不要直接大量寫程式碼。
@@ -49,7 +53,7 @@ fi
 # non-technical user can sanity-check the direction before development starts.
 if [ -n "$PLAN_SUMMARY_FILE" ]; then
   if [ -n "$CODEX" ]; then
-    "$CODEX" exec --skip-git-repo-check --color never -o "$PLAN_SUMMARY_FILE" - <<'PROMPT' || true
+    aif_ai_retry 3 20 -- "$CODEX" exec --skip-git-repo-check --color never -o "$PLAN_SUMMARY_FILE" - <<'PROMPT' || true
 請根據 docs/ai/issue.json 與 docs/ai/IMPLEMENTATION_PLAN.md，用非工程師也看得懂的繁體中文，
 輸出 3–5 點「開工前計畫摘要」。
 

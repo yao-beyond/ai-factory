@@ -16,6 +16,8 @@ BRANCH="ai/${TASK_ID}/dev-${AGENT_NO}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/git/branch-guard.sh"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/lib/ai-retry.sh"
 
 # Branch from the plan branch so the dev agent has IMPLEMENTATION_PLAN.md.
 if git rev-parse --verify "$PLAN_BRANCH" >/dev/null 2>&1; then
@@ -41,7 +43,7 @@ esac
 
 CLAUDE="${CLAUDE_BIN:-$(command -v claude 2>/dev/null || command -v claude-code 2>/dev/null || true)}"
 if [ -n "$CLAUDE" ]; then
-  "$CLAUDE" -p --permission-mode acceptEdits <<PROMPT
+  aif_ai_retry 3 20 -- "$CLAUDE" -p --permission-mode acceptEdits <<PROMPT
 你是 Claude Code 實作工程師。
 
 請依照 docs/ai/IMPLEMENTATION_PLAN.md 開發。
