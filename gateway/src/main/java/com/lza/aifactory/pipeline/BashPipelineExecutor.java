@@ -36,9 +36,7 @@ public class BashPipelineExecutor implements PipelineExecutor {
                 .redirectOutput(taskDir.resolve("run.log").toFile())
                 .redirectErrorStream(true);
 
-        Map<String, String> env = pb.environment();
-        env.put("TASK_ID", request.taskId());
-        env.putAll(request.env());
+        applyEnv(pb.environment(), request.taskId(), request.env());
 
         Process process = pb.start();
         log.info("Started bash pipeline for taskId={} script={}", request.taskId(), pipelineScript);
@@ -47,6 +45,18 @@ public class BashPipelineExecutor implements PipelineExecutor {
         // status (crash, OOM, SIGKILL — cases the bash ERR trap can miss), the
         // task would otherwise hang forever as "in progress". Reconcile to FAILED.
         process.onExit().thenAccept(p -> reconcile(request.taskId(), taskDir, p.exitValue()));
+    }
+
+    /**
+     * Build the child process environment. Per-task pipeline vars that must come
+     * ONLY from the (validated) request are stripped from the inherited env first,
+     * so an inherited SOURCE_PATH/PROJECT_MODE can never bypass gateway validation.
+     */
+    public static void applyEnv(Map<String, String> env, String taskId, Map<String, String> requestEnv) {
+        env.remove("SOURCE_PATH");
+        env.remove("PROJECT_MODE");
+        env.put("TASK_ID", taskId);
+        env.putAll(requestEnv);
     }
 
     private void reconcile(String taskId, Path taskDir, int exitCode) {
