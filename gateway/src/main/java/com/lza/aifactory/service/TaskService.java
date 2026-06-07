@@ -39,6 +39,9 @@ public class TaskService {
     private final Path workDir;
     private final List<String> allowRepositories;
     private final Map<String, TaskRecord> tasks = new ConcurrentHashMap<>();
+    // Tasks the user deleted: tombstoned so a concurrent refresh()/restore can't
+    // resurrect them after the in-memory entry and on-disk dir are gone.
+    private final java.util.Set<String> deletedTaskIds = ConcurrentHashMap.newKeySet();
 
     public TaskService(ObjectMapper objectMapper,
                        AiFactoryProperties properties,
@@ -83,10 +86,23 @@ public class TaskService {
         String taskId = taskDir.getFileName().toString();
         try {
             IssueDto dto = objectMapper.readValue(Files.readString(issueFile), IssueDto.class);
+            // Restore the real submit time (don't use now() — it would corrupt
+            // sort order and elapsed-time). Prefer task-meta.json, else the
+            // issue.json mtime, else now() as a last resort.
+            Map<String, Instant> meta = readTaskMeta(taskDir);
+            Instant submittedAt = meta.get("submittedAt");
+            if (submittedAt == null) {
+                try {
+                    submittedAt = Files.getLastModifiedTime(issueFile).toInstant();
+                } catch (IOException ignored) {
+                    submittedAt = Instant.now();
+                }
+            }
+            Instant completedAt = meta.get("completedAt");
             TaskRecord record = new TaskRecord(
                     taskId, dto.getSource(), dto.getExternalId(), dto.getTitle(),
                     dto.getRepo(), dto.getTargetBranch(),
-                    TaskStatus.SUBMITTED, "restored", Instant.now(), Instant.now(),
+                    TaskStatus.SUBMITTED, "restored", submittedAt, submittedAt, completedAt,
                     taskDir.toString(), null);
             tasks.put(taskId, refresh(record));
         } catch (IOException e) {
@@ -127,6 +143,11 @@ public class TaskService {
                         ? UUID.randomUUID().toString()
                         : dto.getExternalId());
 
+        // Reusing an id that was previously deleted (e.g. a re-submitted external
+        // id): clear the tombstone so the fresh task is visible again. The
+        // tombstone only exists to block a concurrent resurrect during deletion.
+        deletedTaskIds.remove(taskId);
+
         Path taskDir = workDir.resolve(taskId);
         Files.createDirectories(taskDir);
         Files.writeString(taskDir.resolve("issue.json"),
@@ -135,6 +156,8 @@ public class TaskService {
             seed.seed(taskDir); // e.g. extract the uploaded zip into workspace/repo
         }
         writeStatus(taskDir, TaskStatus.SUBMITTED, "submitted");
+        Instant submittedAt = Instant.now();
+        writeTaskMeta(taskDir, submittedAt, null);   // durable submit time, survives restart
 
         pipelineExecutor.start(new PipelineRequest(taskId, taskDir, buildEnv(dto)));
         etaService.markStart(taskId);
@@ -147,7 +170,7 @@ public class TaskService {
                 taskId, dto.getSource(), dto.getExternalId(), dto.getTitle(),
                 dto.getRepo(), dto.getTargetBranch(),
                 TaskStatus.SUBMITTED, "submitted",
-                Instant.now(), Instant.now(), taskDir.toString(), null);
+                submittedAt, submittedAt, null, taskDir.toString(), null);
         tasks.put(taskId, record);
         return record;
     }
@@ -400,7 +423,9 @@ public class TaskService {
     }
 
     public Optional<TaskRecord> findStatus(String taskId) {
-        TaskRecord record = tasks.get(normalizeTaskId(taskId));
+        String id = normalizeTaskId(taskId);
+        if (deletedTaskIds.contains(id)) return Optional.empty();
+        TaskRecord record = tasks.get(id);
         if (record == null) return Optional.empty();
         return Optional.of(refresh(record));
     }
@@ -408,12 +433,14 @@ public class TaskService {
     public List<TaskRecord> listTasks() {
         List<TaskRecord> snapshot = new ArrayList<>();
         for (TaskRecord record : tasks.values()) {
+            if (deletedTaskIds.contains(record.taskId())) continue;
             snapshot.add(refresh(record));
         }
         return snapshot;
     }
 
     private TaskRecord refresh(TaskRecord record) {
+        if (deletedTaskIds.contains(record.taskId())) return record;
         Path statusFile = workDir.resolve(record.taskId()).resolve("status.txt");
         if (!Files.exists(statusFile)) return record;
         try {
@@ -431,13 +458,111 @@ public class TaskService {
                 if (parsed == TaskStatus.COMPLETED) etaService.onCompleted(record.taskId());
                 else if (parsed == TaskStatus.FAILED) etaService.forget(record.taskId());
             }
-            TaskRecord updated = record.withStatus(parsed, message, prUrl);
+            // Stamp the completion time once, from the pipeline's own terminal
+            // timestamp (COMPLETED_AT, else UPDATED_AT), and persist it so a restart
+            // keeps an accurate elapsed-time.
+            boolean terminal = parsed == TaskStatus.COMPLETED || parsed == TaskStatus.FAILED;
+            Instant completedAt = record.completedAt();
+            if (terminal && completedAt == null) {
+                completedAt = parseInstant(kv.get("COMPLETED_AT"));
+                if (completedAt == null) completedAt = parseInstant(kv.get("UPDATED_AT"));
+                if (completedAt == null) completedAt = Instant.now();
+                writeTaskMeta(workDir.resolve(record.taskId()), record.submittedAt(), completedAt);
+            }
+            TaskRecord updated = record.update(parsed, message, prUrl, completedAt);
+            if (deletedTaskIds.contains(record.taskId())) return record; // deleted mid-refresh
             tasks.put(record.taskId(), updated);
             return updated;
         } catch (IOException e) {
             log.warn("Failed to refresh status for {}: {}", record.taskId(), e.getMessage());
             return record;
         }
+    }
+
+    private static Instant parseInstant(String v) {
+        if (v == null || v.isBlank()) return null;
+        try {
+            return Instant.parse(v.trim());
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    /** Gateway-owned durable timing, so submit/complete times survive a restart. */
+    private void writeTaskMeta(Path taskDir, Instant submittedAt, Instant completedAt) {
+        try {
+            Map<String, String> meta = new LinkedHashMap<>();
+            if (submittedAt != null) meta.put("submittedAt", submittedAt.toString());
+            if (completedAt != null) meta.put("completedAt", completedAt.toString());
+            Path tmp = taskDir.resolve("task-meta.json.tmp");
+            Files.writeString(tmp, objectMapper.writeValueAsString(meta));
+            Files.move(tmp, taskDir.resolve("task-meta.json"),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            log.debug("Could not write task-meta for {}: {}", taskDir, e.getMessage());
+        }
+    }
+
+    private Map<String, Instant> readTaskMeta(Path taskDir) {
+        Path f = taskDir.resolve("task-meta.json");
+        Map<String, Instant> out = new LinkedHashMap<>();
+        if (!Files.exists(f)) return out;
+        try {
+            Map<?, ?> raw = objectMapper.readValue(Files.readString(f), Map.class);
+            Instant s = parseInstant(raw.get("submittedAt") == null ? null : String.valueOf(raw.get("submittedAt")));
+            Instant c = parseInstant(raw.get("completedAt") == null ? null : String.valueOf(raw.get("completedAt")));
+            if (s != null) out.put("submittedAt", s);
+            if (c != null) out.put("completedAt", c);
+        } catch (IOException ignored) {
+        }
+        return out;
+    }
+
+    /**
+     * Delete a finished task: remove it from the in-memory list and erase its
+     * work directory (including any result.zip). Only terminal tasks may be
+     * deleted; a tombstone blocks a concurrent refresh/restore from resurrecting
+     * it. Path is validated to stay inside the work dir.
+     */
+    public boolean deleteTask(String taskId) {
+        String id = normalizeTaskId(taskId);
+        TaskRecord current = findStatus(id).orElse(null);
+        if (current == null || !current.terminal()) return false;
+        deletedTaskIds.add(id);
+        tasks.remove(id);
+        try {
+            Path base = workDir.normalize();
+            Path dir = base.resolve(id).normalize();
+            // Must be a *direct child* of the work dir — never the work dir itself
+            // (id="." resolves to it) or anything above it (id=".."). Deleting the
+            // work dir would wipe every task.
+            if (dir.getParent() != null && dir.getParent().equals(base)
+                    && !dir.equals(base) && Files.isDirectory(dir)) {
+                deleteRecursively(dir);
+            } else {
+                log.warn("Refusing to delete unsafe path for task id '{}' -> {}", id, dir);
+            }
+        } catch (IOException e) {
+            log.warn("Deleted task {} from list but could not erase its files: {}", id, e.getMessage());
+        }
+        return true;
+    }
+
+    private static void deleteRecursively(Path dir) throws IOException {
+        Files.walkFileTree(dir, new java.nio.file.SimpleFileVisitor<Path>() {
+            @Override
+            public java.nio.file.FileVisitResult visitFile(Path file, java.nio.file.attribute.BasicFileAttributes a)
+                    throws IOException {
+                Files.deleteIfExists(file);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public java.nio.file.FileVisitResult postVisitDirectory(Path d, IOException e) throws IOException {
+                Files.deleteIfExists(d);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
     }
 
     private void writeStatus(Path taskDir, TaskStatus status, String message) throws IOException {
@@ -542,6 +667,12 @@ public class TaskService {
     }
 
     private String normalizeTaskId(String value) {
-        return value.replaceAll("[^A-Za-z0-9._-]", "-");
+        String v = (value == null ? "" : value).replaceAll("[^A-Za-z0-9._-]", "-");
+        // Never allow an id that resolves to the work dir itself ("." / "") or its
+        // parent (".."), which would let path ops escape the per-task directory.
+        if (v.isBlank() || v.chars().allMatch(c -> c == '.')) {
+            v = "task-" + Integer.toHexString((value == null ? "" : value).hashCode());
+        }
+        return v;
     }
 }
