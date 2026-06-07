@@ -62,9 +62,11 @@ public class EtaService {
      */
     public Optional<Duration> estimateRemaining(TaskRecord record) {
         TaskStatus s = record.status();
-        // No ETA for terminal states, nor while waiting on a human decision.
-        if (s == TaskStatus.COMPLETED || s == TaskStatus.FAILED
-                || s == TaskStatus.AWAITING_CONFIRMATION) return Optional.empty();
+        // No ETA for terminal states (incl. CANCELLED), while waiting on a human
+        // decision, or while paused — "remaining" is meaningless in all of these.
+        if (record.terminal()
+                || s == TaskStatus.AWAITING_CONFIRMATION
+                || s == TaskStatus.PAUSED) return Optional.empty();
         int progress = Math.max(0, Math.min(100, s.progress()));
         long remaining = averageTotalMillis() * (100 - progress) / 100;
         return Optional.of(Duration.ofMillis(remaining));

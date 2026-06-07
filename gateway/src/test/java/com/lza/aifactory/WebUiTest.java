@@ -790,7 +790,10 @@ class WebUiTest {
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("AI 即時執行紀錄"))))
                 .andExpect(content().string(org.hamcrest.Matchers.not(
-                        org.hamcrest.Matchers.containsString("休息一下"))));
+                        org.hamcrest.Matchers.containsString("休息一下"))))
+                // A stopped task has no "time remaining".
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("預計還要"))));
     }
 
     private java.nio.file.Path workDir() {
