@@ -53,6 +53,24 @@ Our principle is **"claims must match reality — never overpromise"**, so here'
 
 ---
 
+## 🎬 How "Discovery" works
+
+<p align="center">
+  <img src="docs/screenshots/discovery-flow.png" width="300" alt="Discovery flow: entry → two questions → starter cards → name it → prefilled request">
+</p>
+
+From a blank slate to a buildable request in five steps:
+
+1. **Home entry** — tap "🤔 No idea where to start?"
+2. **Two quick questions** — who's it for? what do you want it to do? (tap-only, no typing)
+3. **Pick a starter card** — see one you like and say "Yes, that one!"
+4. **Name it** (optional) — and it becomes *yours*
+5. **Request auto-filled** — even the capability boundary is written for you, then **you review before anything is built**
+
+> The card library *is* the v1 capability boundary: whatever has a card is buildable; what it can't do (backend, payments, auto-receiving submissions) never appears as an option — and can't be smuggled into the request.
+
+---
+
 ## 🎯 Our philosophy: human-in-the-loop, you stay in control
 
 We believe technology should empower creativity, not get in its way. AI Factory has three goals:
