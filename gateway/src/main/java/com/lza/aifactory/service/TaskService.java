@@ -148,6 +148,18 @@ public class TaskService {
         // tombstone only exists to block a concurrent resurrect during deletion.
         deletedTaskIds.remove(taskId);
 
+        // Backend defence: sanitise + length-cap the free-text fields that flow
+        // into the AI prompt, so an oversized or control-char-laden value can't
+        // slip in (the browser's limits can be bypassed via the JSON API/webhooks).
+        dto.setTitle(sanitizeText(dto.getTitle(), 2048));
+        dto.setDescription(sanitizeText(dto.getDescription(), 32768));
+        // @NotBlank ran before sanitisation; a control-char-only value would have
+        // passed it yet be empty now. Reject rather than store a blank field
+        // (GlobalExceptionHandler maps IllegalArgumentException to HTTP 400).
+        if (dto.getTitle().isBlank() || dto.getDescription().isBlank()) {
+            throw new IllegalArgumentException("標題與描述需包含可閱讀的文字");
+        }
+
         Path taskDir = workDir.resolve(taskId);
         Files.createDirectories(taskDir);
         Files.writeString(taskDir.resolve("issue.json"),
@@ -404,11 +416,20 @@ public class TaskService {
      * Write the approve/cancel marker the waiting pipeline polls for. Atomic
      * (temp + rename). The bash loop treats cancel as winning over approve.
      */
-    public void writeConfirmMarker(String taskId, boolean approve, String option) throws IOException {
+    public void writeConfirmMarker(String taskId, boolean approve, String option, String note)
+            throws IOException {
         Path dir = workDir.resolve(normalizeTaskId(taskId));
         if (approve && option != null && !option.isBlank()) {
             Path optTarget = dir.resolve("confirm.option");
             Files.writeString(optTarget, option.trim() + "\n");
+        }
+        // The user's free-text plan/note: write it (sanitised) BEFORE confirm.approve
+        // so the running pipeline only sees it once the approve marker exists.
+        if (approve) {
+            String clean = sanitizeNote(note);
+            if (!clean.isBlank()) {
+                Files.writeString(dir.resolve("confirm.note"), clean);
+            }
         }
         String name = approve ? "confirm.approve" : "confirm.cancel";
         Path target = dir.resolve(name);
@@ -420,6 +441,38 @@ public class TaskService {
         } catch (java.nio.file.AtomicMoveNotSupportedException e) {
             Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
+    }
+
+    /**
+     * Sanitise the user's confirm-page note. It is treated purely as DATA (written
+     * to a file and folded into the plan as a fenced block, never executed):
+     * normalise newlines, cap length, and drop NUL / control characters (keeping
+     * \n and \t).
+     */
+    private static String sanitizeNote(String note) {
+        return sanitizeText(note, 16384);
+    }
+
+    /**
+     * Sanitise free user text (description, note, …): normalise newlines, cap the
+     * length, and drop NUL / control characters (keeping \n and \t). A shared
+     * backend guard so an oversized or control-char-laden value can't slip in via
+     * the JSON API, multipart form, or a webhook even if the browser is bypassed.
+     */
+    private static String sanitizeText(String s, int maxLen) {
+        if (s == null) return "";
+        String t = s.replace("\r\n", "\n").replace("\r", "\n");
+        if (t.length() > maxLen) t = t.substring(0, maxLen);
+        StringBuilder sb = new StringBuilder(t.length());
+        for (int i = 0; i < t.length(); i++) {
+            char c = t.charAt(i);
+            if (c == '\n' || c == '\t') {
+                sb.append(c);
+            } else if (c >= 0x20 && c != 0x7f) {
+                sb.append(c);
+            }
+        }
+        return sb.toString().strip();
     }
 
     /**

@@ -565,7 +565,7 @@ class WebUiTest {
         java.nio.file.Files.writeString(workDir().resolve("UAT-BADOPT").resolve("options.json"), optionsJson);
         mvc.perform(get("/gateway/ui/UAT-BADOPT"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("請先確認開工方向")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("開工方向")));
     }
 
     @Test
@@ -575,7 +575,7 @@ class WebUiTest {
                 "{\"not\":\"an array\"}");
         mvc.perform(get("/gateway/ui/UAT-OBJOPT"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("請先確認開工方向")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("開工方向")));
     }
 
     @Test
@@ -796,6 +796,87 @@ class WebUiTest {
                         org.hamcrest.Matchers.containsString("預計還要"))));
     }
 
+    @Test
+    void confirmPageShowsEditablePlanDraft() throws Exception {
+        putAwaitingTask("UAT-EDIT", true);
+        mvc.perform(get("/gateway/ui/UAT-EDIT"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"planDraft\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("plan-draft")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("讓粉圓重寫")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("就照這樣開工")))
+                // The AI plan is pre-filled for editing.
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("在首頁加上聯絡我們連結")));
+    }
+
+    @Test
+    void confirmWithNoteWritesNoteMarker() throws Exception {
+        putAwaitingTask("UAT-NOTE", true);
+        mvc.perform(post("/gateway/confirm/UAT-NOTE")
+                        .param("option", "stable").param("note", "我想加一個深藍色的按鈕"))
+                .andExpect(status().isOk());
+        java.nio.file.Path note = workDir().resolve("UAT-NOTE").resolve("confirm.note");
+        org.junit.jupiter.api.Assertions.assertTrue(java.nio.file.Files.exists(note));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                java.nio.file.Files.readString(note).contains("深藍色的按鈕"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                java.nio.file.Files.exists(workDir().resolve("UAT-NOTE").resolve("confirm.approve")));
+    }
+
+    @Test
+    void confirmWithoutNoteWritesNoNoteMarker() throws Exception {
+        putAwaitingTask("UAT-NONOTE", true);
+        mvc.perform(post("/gateway/confirm/UAT-NONOTE")).andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertFalse(
+                java.nio.file.Files.exists(workDir().resolve("UAT-NONOTE").resolve("confirm.note")));
+    }
+
+    @Test
+    void confirmNoteStripsControlChars() throws Exception {
+        putAwaitingTask("UAT-NOTE-CTRL", true);
+        mvc.perform(post("/gateway/confirm/UAT-NOTE-CTRL")
+                        .param("note", "Hello" + ((char) 1) + ((char) 0) + "World"))
+                .andExpect(status().isOk());
+        String saved = java.nio.file.Files.readString(
+                workDir().resolve("UAT-NOTE-CTRL").resolve("confirm.note"));
+        org.junit.jupiter.api.Assertions.assertEquals("HelloWorld", saved);
+    }
+
+    @Test
+    void homeShowsUploadDescriptionFile() throws Exception {
+        mvc.perform(get("/"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("上傳描述檔")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"descFile\"")));
+    }
+
+    @Test
+    void descriptionIsSanitizedAndCappedOnSubmit() throws Exception {
+        // \\u0001 is a JSON-escaped control char; plus an over-cap length.
+        String desc = "Hello\\u0001World" + "A".repeat(40000);
+        String body = "{\"source\":\"web\",\"externalId\":\"UAT-DESC-SAN\",\"title\":\"t\",\"description\":\""
+                + desc + "\",\"maxAgents\":1}";
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        String issue = java.nio.file.Files.readString(
+                workDir().resolve("UAT-DESC-SAN").resolve("issue.json"));
+        String saved = com.jayway.jsonpath.JsonPath.read(issue, "$.description");
+        // Control char stripped, length capped to the backend limit.
+        org.junit.jupiter.api.Assertions.assertFalse(saved.contains(String.valueOf((char) 1)));
+        org.junit.jupiter.api.Assertions.assertTrue(saved.length() <= 32768);
+        org.junit.jupiter.api.Assertions.assertTrue(saved.startsWith("HelloWorld"));
+    }
+
+    @Test
+    void fieldThatBecomesBlankAfterSanitizeIsRejected() throws Exception {
+        // \\u007F (DEL) is > 0x20 so it survives @NotBlank's trim(), but the
+        // sanitizer strips it — the title would be empty. Must be rejected (400),
+        // not stored blank.
+        String body = "{\"source\":\"web\",\"externalId\":\"UAT-BLANKED\",\"title\":\"\\u007F\",\"description\":\"a real description\",\"maxAgents\":1}";
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isBadRequest());
+    }
+
     private java.nio.file.Path workDir() {
         return java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "ai-factory-webui-test");
     }
@@ -820,10 +901,10 @@ class WebUiTest {
         putAwaitingTask("UAT-AWAIT", true);
         mvc.perform(get("/gateway/ui/UAT-AWAIT"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("請先確認開工方向")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("開工方向")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("在首頁加上聯絡我們連結")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("確認開工")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("取消")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("就照這樣開工")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("先不做了")))
                 // ETA must be hidden while waiting on a human.
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("預計還要"))));

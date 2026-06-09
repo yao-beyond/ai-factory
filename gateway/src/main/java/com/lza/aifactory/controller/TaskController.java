@@ -163,17 +163,18 @@ public class TaskController {
     /** Approve the plan and let the pipeline start building. */
     @PostMapping("/confirm/{taskId}")
     public ResponseEntity<?> confirm(@PathVariable String taskId, HttpServletRequest request) {
-        String option = request.getParameter("option");
-        return decide(taskId, true, option);
+        // Form-body params: the (possibly edited) plan note can be long/multi-line,
+        // so it comes in the POST body, not the query string.
+        return decide(taskId, true, request.getParameter("option"), request.getParameter("note"));
     }
 
     /** Cancel the task while it waits at the confirmation gate. */
     @PostMapping("/cancel/{taskId}")
     public ResponseEntity<?> cancel(@PathVariable String taskId) {
-        return decide(taskId, false, null);
+        return decide(taskId, false, null, null);
     }
 
-    private ResponseEntity<?> decide(String taskId, boolean approve, String option) {
+    private ResponseEntity<?> decide(String taskId, boolean approve, String option, String note) {
         TaskRecord record = taskService.findStatus(taskId).orElse(null);
         if (record == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -185,7 +186,7 @@ public class TaskController {
                             "message", "task is not awaiting confirmation (status=" + record.status().name() + ")"));
         }
         try {
-            taskService.writeConfirmMarker(taskId, approve, option);
+            taskService.writeConfirmMarker(taskId, approve, option, note);
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "io_error", "message", "could not record decision"));
@@ -446,9 +447,17 @@ public class TaskController {
     private String resultBlock(TaskRecord r) {
         TaskStatus s = r.status();
         if (s == TaskStatus.AWAITING_CONFIRMATION) {
-            String plan = taskService.readPlanSummary(r.taskId())
-                    .map(md -> "<div class=\"sumtitle\">AI 打算這樣做：</div>" + renderSummaryHtml(md))
-                    .orElse("<p>正在整理計畫摘要，稍候重新整理即可看到。</p>");
+            // The plan is shown as an EDITABLE draft — the user can rewrite the
+            // direction before approving. Pre-filled with the AI's plain-language
+            // summary; esc() makes a "</textarea>" in the text harmless.
+            String planText = taskService.readPlanSummary(r.taskId()).orElse("");
+            String plan = """
+                <div class="sumtitle">AI 幫你擬定的執行計畫草稿：</div>
+                <textarea id="planDraft" class="plan-draft" placeholder="（如果把計畫都刪光，粉圓會不知道要做什麼喔…）">%s</textarea>
+                <textarea id="planOriginal" style="display:none">%s</textarea>
+                <div class="plan-tools"><button type="button" class="reset" onclick="resetPlan()">🔄 讓粉圓重寫（還原初版）</button></div>
+                <p class="hint">💡 覺得哪裡不對、或想加點新點子？直接在上面改寫就可以囉！粉圓會照著你最後寫的內容去開工。</p>
+                """.formatted(esc(planText), esc(planText));
             
             List<Map<String, Object>> options = taskService.readOptions(r.taskId());
             StringBuilder optionsHtml = new StringBuilder();
@@ -505,16 +514,25 @@ public class TaskController {
                   .opt-ratings{margin-top:10px;display:flex;flex-direction:column;gap:3px;}
                   .opt-rating{display:flex;justify-content:space-between;font-size:12px;color:#656d76;}
                   .opt-rating .stars{color:#f5a623;letter-spacing:1px;}
+                  .plan-draft{width:100%%;box-sizing:border-box;min-height:140px;resize:vertical;
+                              border:1.5px dashed #d0a3c7;border-radius:10px;padding:12px 14px;
+                              font:inherit;font-size:14px;line-height:1.6;color:#1f2328;background:#fffdfe;}
+                  .plan-draft:focus{outline:none;border:1.5px solid #d6409f;background:#fff;}
+                  .plan-tools{margin:6px 0 2px;text-align:right;}
+                  .plan-tools .reset{background:#fce7f3;color:#9d174d;border:0;border-radius:8px;
+                                     padding:6px 12px;font-size:13px;cursor:pointer;}
+                  .plan-tools .reset:hover{background:#fbcfe8;}
+                  .hint{font-size:13px;color:#656d76;margin:6px 0 0;}
                 </style>
                 <div class="result await">
-                  <h2>📝 請先確認開工方向</h2>
+                  <h2>📝 粉圓想跟你對一下開工方向！</h2>
                   %s
                   %s
                   <div class="confirm-actions">
-                    <button class="btn ok" onclick="decide('confirm')">✅ 確認開工</button>
-                    <button class="btn no" onclick="decide('cancel')">❌ 取消</button>
+                    <button class="btn ok" onclick="decide('confirm')">✅ 就照這樣開工！</button>
+                    <button class="btn no" onclick="decide('cancel')">❌ 先不做了</button>
                   </div>
-                  <p class="ask">確認後 AI 才會開始開發。方向不對就按「取消」，補充需求後重新送出即可。</p>
+                  <p class="ask">按下開工後，粉圓就會照著你上面寫的計畫去做。方向不對也可以「先不做了」，補充想法後重新送出。</p>
                 </div>
                 <script>
                   function selectOption(el){
@@ -524,24 +542,34 @@ public class TaskController {
                     // JS), so an AI-generated id can't break out of a JS string.
                     document.getElementById('selectedOption').value = el.getAttribute('data-opt-id');
                   }
+                  function resetPlan(){
+                    var d = document.getElementById('planDraft');
+                    var o = document.getElementById('planOriginal');
+                    if(d && o){ d.value = o.value; d.focus(); }
+                  }
                   function decide(a){
                     var btns = document.querySelectorAll('.confirm-actions .btn');
-                    btns.forEach(function(b){ b.disabled = true; });
-                    var url = '/gateway/'+a+'/%s';
-                    var opt = document.getElementById('selectedOption');
-                    if(a === 'confirm' && opt){
-                      url += '?option=' + encodeURIComponent(opt.value);
+                    function reenable(){ btns.forEach(function(b){ b.disabled = false; }); }
+                    var body = new URLSearchParams();
+                    if(a === 'confirm'){
+                      var draft = document.getElementById('planDraft');
+                      var note = draft ? draft.value.trim() : '';
+                      if(draft && !note){ alert('哎呀！計畫不能是空的，不然粉圓會迷路喔 😵‍💫'); return; }
+                      var opt = document.getElementById('selectedOption');
+                      if(opt){ body.set('option', opt.value); }
+                      body.set('note', note);
                     }
-                    fetch(url,{method:'POST'})
+                    btns.forEach(function(b){ b.disabled = true; });
+                    fetch('/gateway/'+a+'/%s', {
+                        method:'POST',
+                        headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
+                        body: body
+                      })
                       .then(function(r){
                         if(r.ok || r.status === 409){ location.reload(); return; }
-                        alert('操作失敗，請稍後重試');
-                        btns.forEach(function(b){ b.disabled = false; });
+                        alert('操作失敗，請稍後重試'); reenable();
                       })
-                      .catch(function(){
-                        alert('操作失敗，請稍後重試');
-                        btns.forEach(function(b){ b.disabled = false; });
-                      });
+                      .catch(function(){ alert('操作失敗，請稍後重試'); reenable(); });
                   }
                 </script>
                 """.formatted(plan, optionsHtml.toString(), id);

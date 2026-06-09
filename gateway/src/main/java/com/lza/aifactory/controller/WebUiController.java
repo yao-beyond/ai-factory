@@ -60,6 +60,8 @@ public class WebUiController {
                 .strength input,.mode input,.project-type input{display:none;}
                 .strength input:checked + span,.mode input:checked + span,.project-type input:checked + span{font-weight:700;color:#0969da;}
                 .mode label{padding:12px;}
+                .upload-link{margin:0;font-weight:normal;color:#0969da;cursor:pointer;font-size:13px;}
+                .upload-link:hover{text-decoration:underline;}
                 button{margin-top:24px;width:100%;background:#1f883d;color:#fff;border:0;border-radius:8px;
                       padding:13px;font-size:16px;font-weight:600;cursor:pointer;}
                 button:hover{background:#1a7f37;}
@@ -92,7 +94,11 @@ public class WebUiController {
                   <input type="text" id="title" required placeholder="例如：結帳頁面加上儲存常用地址">
                   <div class="hint">一句話講清楚要做什麼。</div>
 
-                  <label for="description">詳細描述</label>
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 6px;">
+                    <label for="description" style="margin:0;">詳細描述</label>
+                    <label for="descFile" class="upload-link">📎 上傳描述檔</label>
+                    <input type="file" id="descFile" style="display:none" accept=".txt,.md,.markdown,.json,.yml,.yaml">
+                  </div>
                   <textarea id="description" required placeholder="背景、想解決的問題、期待的結果。越具體越好。"></textarea>
 
                   <label>想要什麼樣的成品？</label>
@@ -123,6 +129,38 @@ public class WebUiController {
                   const m = document.querySelector('input[name=mode]:checked').value;
                   document.getElementById('uploadRow').style.display = (m === 'import') ? 'block' : 'none';
                 }
+                document.getElementById('descFile').addEventListener('change', function(e){
+                  var file = e.target.files[0];
+                  if(!file){ return; }
+                  if(file.size > 256 * 1024){
+                    alert('汪！這個檔案太大了，粉圓讀不動（限 256KB 內的文字檔）。');
+                    e.target.value = ''; return;
+                  }
+                  var reader = new FileReader();
+                  reader.onload = function(ev){
+                    var raw = String(ev.target.result || '');
+                    // Looks binary? (a NUL byte) — bail out, we only want text.
+                    if(raw.indexOf('\\u0000') >= 0){
+                      alert('汪！這看起來不是純文字檔，粉圓只看得懂文字喔。'); e.target.value=''; return;
+                    }
+                    // Normalise newlines + drop control chars (keep \\n and \\t); cap length.
+                    var text = raw.replace(/\\r\\n/g,'\\n').replace(/\\r/g,'\\n')
+                                  .replace(/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]/g,'');
+                    var capped = false;
+                    if(text.length > 32000){ text = text.slice(0, 32000); capped = true; }
+                    var area = document.getElementById('description');
+                    if(area.value.trim().length > 0){
+                      if(!confirm('汪！詳細描述已經有內容了，要用檔案內容取代它嗎？')){ e.target.value=''; return; }
+                    }
+                    area.value = text;
+                    area.focus();
+                    alert('汪！已經幫你把「' + file.name + '」的內容填進去囉！'
+                          + (capped ? '（內容有點長，先幫你保留前面的部分）' : ''));
+                    e.target.value = '';
+                  };
+                  reader.onerror = function(){ alert('汪！讀取檔案失敗了，請再試一次。'); e.target.value=''; };
+                  reader.readAsText(file);
+                });
                 async function submitForm(e){
                   e.preventDefault();
                   const err = document.getElementById('err');
