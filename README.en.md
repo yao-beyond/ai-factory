@@ -30,6 +30,27 @@ button to the top-left of the web page"), and the AI will automatically:
 
 Works with **GitHub / GitLab / Bitbucket**, and is designed to drop into systems you already have.
 
+> 🤔 **No idea where to start?** Try **"Discovery"** on the home page — answer two quick questions, pick a concrete starter card, and you're on your way even from a blank slate.
+
+---
+
+## ✅ What it does / ❌ What it does NOT do yet (the honest version)
+
+Our principle is **"claims must match reality — never overpromise"**, so here's the boundary up front:
+
+**✅ What it can do today (v1)**
+- Generate **static web pages**: digital name cards, one-page shop intros, online menus, FAQs, portfolios…
+- Generate **single-user, browser-local tools**: expense tracker, to-do list, habit tracker, countdown, calculator, CSV viewer
+- **Discovery**: stuck on a blank page? Two questions + concrete starter cards turn a vague itch into a buildable request
+- **Human-in-the-loop throughout**: the AI only produces a reviewable draft (downloadable / previewable, or a Draft PR) and never touches `main`
+
+**❌ What it can't do yet (needs a future backend tier)**
+- No backend server, database, accounts/login, online payments, or third-party integrations
+- "Collect-from-others" outputs (appointment / signup / forms) are an **honest handoff**: the visitor fills the page and sends it to you themselves — **nothing lands in an inbox automatically**
+- It is **not** a "type one sentence, get a full business system" tool — it's a **high-speed prototype draft generator**, not a production-ready product builder
+
+> In short: it gets you **from 0 to a reviewable draft** — the final decision and responsibility are always yours.
+
 ---
 
 ## 🎯 Our philosophy: human-in-the-loop, you stay in control
