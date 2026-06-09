@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "cards": [
+    {
+      "id": "bad_owner_receives",
+      "version": 1,
+      "enabled": true,
+      "audiences": ["self"],
+      "intents": ["showcase"],
+      "formProjectType": "web",
+      "submissionMode": "static_display",
+      "ownerReceivesData": true,
+      "title": "壞卡：ownerReceivesData 為 true",
+      "oneLiner": "v1 不允許任何卡自動收到資料。",
+      "draftTemplate": "建立一個靜態頁面。",
+      "assumptions": ["x"],
+      "included": ["內容"],
+      "excluded": ["後台"],
+      "constraints": {"actors": 1, "workflows": 1, "dataSources": [], "externalIntegrations": false, "auth": false, "payment": false}
+    }
+  ]
+}

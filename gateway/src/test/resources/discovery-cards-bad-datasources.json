@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "cards": [
+    {
+      "id": "bad_datasources_mismatch",
+      "version": 1,
+      "enabled": true,
+      "audiences": ["self"],
+      "intents": ["showcase"],
+      "formProjectType": "web",
+      "submissionMode": "static_display",
+      "ownerReceivesData": false,
+      "title": "壞卡：static_display 卻宣告本機儲存資料來源",
+      "oneLiner": "dataSources 與 submissionMode 不一致，應在啟動時被擋下。",
+      "draftTemplate": "建立一個靜態頁面。",
+      "assumptions": ["x"],
+      "included": ["內容"],
+      "excluded": ["後台"],
+      "constraints": {"actors": 1, "workflows": 1, "dataSources": ["local_browser_storage"], "externalIntegrations": false, "auth": false, "payment": false}
+    }
+  ]
+}

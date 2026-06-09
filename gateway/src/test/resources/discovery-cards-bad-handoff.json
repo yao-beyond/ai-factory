@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "cards": [
+    {
+      "id": "bad_handoff_missing_meta",
+      "version": 1,
+      "enabled": true,
+      "audiences": ["customers"],
+      "intents": ["collect"],
+      "formProjectType": "web",
+      "submissionMode": "visitor_manual_handoff",
+      "ownerReceivesData": false,
+      "title": "壞卡：handoff 但缺 handoff 區塊",
+      "oneLiner": "這張卡應該在啟動時被擋下。",
+      "draftTemplate": "建立一個靜態頁面。",
+      "assumptions": ["x"],
+      "included": ["表單"],
+      "excluded": ["真寄信"],
+      "constraints": {"actors": 1, "workflows": 1, "dataSources": [], "externalIntegrations": false, "auth": false, "payment": false}
+    }
+  ]
+}

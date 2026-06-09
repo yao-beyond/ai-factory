@@ -2,6 +2,8 @@ package com.lza.aifactory.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lza.aifactory.config.AiFactoryProperties;
+import com.lza.aifactory.discovery.Card;
+import com.lza.aifactory.discovery.DiscoveryCardLibrary;
 import com.lza.aifactory.dto.IssueDto;
 import com.lza.aifactory.dto.TaskRecord;
 import com.lza.aifactory.dto.TaskStatus;
@@ -36,6 +38,7 @@ public class TaskService {
     private final PipelineExecutor pipelineExecutor;
     private final EtaService etaService;
     private final ArchiveExtractor archiveExtractor;
+    private final DiscoveryCardLibrary discoveryCardLibrary;
     private final Path workDir;
     private final List<String> allowRepositories;
     private final Map<String, TaskRecord> tasks = new ConcurrentHashMap<>();
@@ -48,6 +51,7 @@ public class TaskService {
                        PipelineExecutor pipelineExecutor,
                        EtaService etaService,
                        ArchiveExtractor archiveExtractor,
+                       DiscoveryCardLibrary discoveryCardLibrary,
                        @Value("${ai-factory.work-dir}") String workDir,
                        @Value("${ai-factory.allow-repositories:}") String allowRepositoriesCsv) {
         this.objectMapper = objectMapper;
@@ -55,6 +59,7 @@ public class TaskService {
         this.pipelineExecutor = pipelineExecutor;
         this.etaService = etaService;
         this.archiveExtractor = archiveExtractor;
+        this.discoveryCardLibrary = discoveryCardLibrary;
         this.workDir = Path.of(workDir);
         // Allowlist = typed config (ai-factory.yml security.allowRepositories)
         // plus the legacy CSV property, for backward compatibility.
@@ -160,6 +165,14 @@ public class TaskService {
             throw new IllegalArgumentException("標題與描述需包含可閱讀的文字");
         }
 
+        // Discovery-originated tasks: re-derive the authoritative capability boundary
+        // from the chosen card on the SERVER, never trusting any client-supplied
+        // boundary. This carries the structured constraints into the pipeline
+        // (issue.json + env), so "the card library is the boundary" is enforced as
+        // data, not just prose in the description. An unknown/forged card id clears
+        // the boundary (the request degrades to a plain typed one).
+        resolveDiscoveryBoundary(dto);
+
         Path taskDir = workDir.resolve(taskId);
         Files.createDirectories(taskDir);
         Files.writeString(taskDir.resolve("issue.json"),
@@ -187,6 +200,26 @@ public class TaskService {
         return record;
     }
 
+    /**
+     * If the request came from discovery, overwrite its capabilityBoundary with the
+     * authoritative one re-derived from the card library by id. A client-supplied
+     * boundary is never trusted; an unknown/disabled card id clears both fields.
+     */
+    private void resolveDiscoveryBoundary(IssueDto dto) {
+        String cardId = dto.getDiscoveryCardId();
+        if (cardId == null || cardId.isBlank()) {
+            dto.setCapabilityBoundary(null);
+            return;
+        }
+        Card card = discoveryCardLibrary.enabledById(cardId).orElse(null);
+        if (card == null) {
+            dto.setDiscoveryCardId(null);
+            dto.setCapabilityBoundary(null);
+            return;
+        }
+        dto.setCapabilityBoundary(card.capabilityBoundary());
+    }
+
     private Map<String, String> buildEnv(IssueDto dto) {
         Map<String, String> env = new LinkedHashMap<>();
         if (dto.getRepo() != null && isUrlLike(dto.getRepo())) {
@@ -203,6 +236,16 @@ public class TaskService {
         }
         if (dto.getProjectType() != null) {
             env.put("PROJECT_TYPE", dto.getProjectType());
+        }
+        // Discovery hard constraints, so the pipeline/dev step can read them as data
+        // (the env value is set directly on the child process, no shell escaping).
+        if (dto.getDiscoveryCardId() != null && dto.getCapabilityBoundary() != null) {
+            env.put("DISCOVERY_CARD_ID", dto.getDiscoveryCardId());
+            try {
+                env.put("CAPABILITY_BOUNDARY", objectMapper.writeValueAsString(dto.getCapabilityBoundary()));
+            } catch (IOException e) {
+                log.warn("Could not serialise capabilityBoundary for {}", dto.getDiscoveryCardId(), e);
+            }
         }
         // New + import both run in local mode (no clone/push/PR/token). Import
         // works on a seed: an uploaded zip (already extracted into workspace/repo)

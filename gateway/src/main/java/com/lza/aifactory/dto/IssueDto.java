@@ -3,7 +3,9 @@ package com.lza.aifactory.dto;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.List;
+import java.util.Map;
 
 public class IssueDto {
     @NotBlank
@@ -27,6 +29,15 @@ public class IssueDto {
     @Max(10)
     private Integer maxAgents = 3;
     private String projectType = "recommend";
+    // Discovery origin: the chosen starter-card id. The server re-derives the
+    // authoritative capabilityBoundary from this id (never trusts a client-supplied
+    // boundary), so a discovery-originated task carries hard constraints into the
+    // pipeline (issue.json + env), not just prose in the description.
+    @Size(max = 128)
+    private String discoveryCardId;
+    // Server-derived structured capability boundary (written to issue.json). Any
+    // value sent by the client is ignored and overwritten from the card library.
+    private Map<String, Object> capabilityBoundary;
 
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }
@@ -52,4 +63,8 @@ public class IssueDto {
     public void setMaxAgents(Integer maxAgents) { this.maxAgents = maxAgents; }
     public String getProjectType() { return projectType; }
     public void setProjectType(String projectType) { this.projectType = projectType; }
+    public String getDiscoveryCardId() { return discoveryCardId; }
+    public void setDiscoveryCardId(String discoveryCardId) { this.discoveryCardId = discoveryCardId; }
+    public Map<String, Object> getCapabilityBoundary() { return capabilityBoundary; }
+    public void setCapabilityBoundary(Map<String, Object> capabilityBoundary) { this.capabilityBoundary = capabilityBoundary; }
 }
