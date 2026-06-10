@@ -218,7 +218,16 @@ if [ "$LOCAL_MODE" = true ]; then
 fi
 
 mkdir -p docs/ai
-cp "${BASE}/issue.json" docs/ai/issue.json
+# Strip credentials from the repo URL before staging issue.json under docs/ai
+# (committed to the PR branch): a token-in-URL must never ride into the repo.
+# REPO_URL (used for clone/push) is unaffected. Plain copy if jq is unavailable.
+if command -v jq >/dev/null 2>&1 && \
+   jq 'if (.repo | type) == "string" then .repo |= gsub("://[^/@[:space:]]+@"; "://") else . end' \
+      "${BASE}/issue.json" > docs/ai/issue.json 2>/dev/null; then
+  :
+else
+  cp "${BASE}/issue.json" docs/ai/issue.json
+fi
 
 STAGE=plan
 set_status PLANNING "running codex-plan"

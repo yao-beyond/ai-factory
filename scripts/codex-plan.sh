@@ -25,7 +25,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/ai-retry.sh"
 
 mkdir -p docs/ai
-cp "$ISSUE_FILE" docs/ai/issue.json
+# Copy the issue spec for the agent, but strip any credentials embedded in the
+# repo URL (https://user:token@host) — docs/ai/issue.json is committed onto the
+# PR branch below, so a token-in-URL here would leak into the delivered repo.
+# This does not touch REPO_URL (the value used for clone/push), only the copy.
+if command -v jq >/dev/null 2>&1 && \
+   jq 'if (.repo | type) == "string" then .repo |= gsub("://[^/@[:space:]]+@"; "://") else . end' \
+      "$ISSUE_FILE" > docs/ai/issue.json 2>/dev/null; then
+  :
+else
+  cp "$ISSUE_FILE" docs/ai/issue.json
+fi
 
 PROJECT_TYPE="${PROJECT_TYPE:-recommend}"
 # options.json must live where the gateway reads it (the task BASE dir, next to
