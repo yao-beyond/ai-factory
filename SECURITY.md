@@ -35,3 +35,27 @@ The gateway runs `bash` pipeline scripts and (in K8s mode) creates Jobs in your 
 - Set `TELEGRAM_WEBHOOK_SECRET` in production.
 - Restrict the Kubernetes RBAC for `ai-factory-orchestrator` to only the namespaces and verbs you need.
 - Treat `ai-secrets` (Codex / Claude / GitLab tokens) as production secrets — use a real secret store, not the example file.
+
+### Credential handling
+
+- **Your prompts and code reach cloud APIs.** The pipeline shells out to the
+  Claude / Codex CLIs, so request text and repository code are sent to
+  Anthropic / OpenAI. Self-hosting covers the pipeline and the artifacts, not
+  the model. Do not submit data you may not share with those providers.
+- **Least-privilege for AI subprocesses.** The `claude` / `codex` CLI steps run
+  with git-provider and messaging tokens (`GITHUB_TOKEN`, `GIT_TOKEN`,
+  `GITLAB_TOKEN`, `BITBUCKET_TOKEN`, `TELEGRAM_*`) stripped from their
+  environment — the agents only see their model key. Git transport still
+  authenticates normally via the remote URL / credential helper.
+- **Output redaction.** The live activity feed *and* the AI-authored
+  `summary.md` / `plan_summary.md` are passed through a secret-redaction filter
+  (token shapes, `user:secret@host` URLs, `key=value` secrets, auth headers)
+  before they are shown in the UI.
+- **Deliverable hygiene.** The downloadable `result.zip` excludes git metadata
+  (root *and* nested `.git`), `.env*`, AI CLI auth dirs (`.claude`, `.codex`),
+  and common private-key files, so a credential cannot ride out in the archive.
+- **Remaining hardening (tracked):** the gateway process passes its full
+  environment to the pipeline; uploaded-zip import does not yet strip secrets
+  on the way in; and the Jira webhook has no signature check (set network/auth
+  controls in front of it). Review `docs/RELEASE_NOTES_v0.1.0.md` before
+  exposing the gateway publicly.

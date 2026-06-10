@@ -363,7 +363,14 @@ public class TaskService {
         Path f = workDir.resolve(normalizeTaskId(taskId)).resolve(name);
         if (!Files.exists(f)) return Optional.empty();
         try {
-            String s = Files.readString(f).strip();
+            // summary.md / plan_summary.md are AI-authored: the agent runs with the
+            // pipeline env (tokens, API keys) in scope, so a stray echo could land a
+            // secret in this text — which is shown in the UI and, in repo mode, can
+            // flow into the PR body. Redact line-by-line, same as the activity feed.
+            String s = Files.readString(f).lines()
+                    .map(TaskService::redactSecrets)
+                    .collect(java.util.stream.Collectors.joining("\n"))
+                    .strip();
             return s.isEmpty() ? Optional.empty() : Optional.of(s);
         } catch (IOException e) {
             return Optional.empty();

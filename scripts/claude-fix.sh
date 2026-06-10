@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Least-privilege env for the AI CLI: the codex/claude child only needs its model
+# key (OPENAI_API_KEY / ANTHROPIC_API_KEY). Strip git-provider and messaging
+# secrets so the agent can never read — and accidentally echo into its output —
+# them. Git transport uses the remote URL / credential helper, not these env
+# vars, so unsetting them here does not affect any git operation this script runs.
+unset GITHUB_TOKEN GIT_TOKEN GITLAB_TOKEN BITBUCKET_TOKEN BITBUCKET_USERNAME \
+      GITLAB_PROJECT_ID TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET 2>/dev/null || true
+
 TASK_ID="${1:?TASK_ID required}"
 FINAL_BRANCH="ai/${TASK_ID}/final"
 

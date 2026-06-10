@@ -398,14 +398,44 @@ if [ "$LOCAL_MODE" = true ]; then
   ZIP_PATH="${BASE}/result.zip"
   rm -f "$ZIP_PATH"
   if command -v zip >/dev/null 2>&1; then
+    # Exclude tooling artifacts AND anything that could carry a credential.
+    # The patterns are doubled (root + */nested) because zip matches the stored
+    # name literally — `.git/*` alone leaves a nested `sub/.git/config` (which can
+    # hold a token-in-URL remote) and any `.env` in the deliverable. Covers git
+    # metadata, env files, AI CLI auth dirs, and common private-key shapes.
     zip -rq "$ZIP_PATH" . \
-      -x '.git/*' './.git/*' \
-      -x '.omc/*' './.omc/*' \
-      -x 'docs/ai/*' './docs/ai/*' || true
+      -x '.git/*' '*/.git/*' \
+      -x '.omc/*' '*/.omc/*' \
+      -x 'docs/ai/*' '*/docs/ai/*' \
+      -x '.env' '.env.*' '*/.env' '*/.env.*' \
+      -x '.claude/*' '*/.claude/*' '.codex/*' '*/.codex/*' \
+      -x '.ssh/*' '*/.ssh/*' '.aws/*' '*/.aws/*' \
+      -x '.netrc' '*/.netrc' '.git-credentials' '*/.git-credentials' \
+      -x '.npmrc' '*/.npmrc' '.pypirc' '*/.pypirc' \
+      -x 'id_rsa*' '*/id_rsa*' 'id_dsa*' '*/id_dsa*' \
+      -x 'id_ecdsa*' '*/id_ecdsa*' 'id_ed25519*' '*/id_ed25519*' \
+      -x '*.pem' '*/*.pem' '*.key' '*/*.key' \
+      -x '*.p12' '*/*.p12' '*.pfx' '*/*.pfx' '*.ppk' '*/*.ppk' \
+      -x '*.jks' '*/*.jks' '*.keystore' '*/*.keystore' || true
   else
-    # Fallback (e.g. no zip binary): git archive includes tracked files, so also
-    # exclude tracked tooling artifacts (.omc) and the pipeline's docs/ai metadata.
-    git archive --format=zip -o "$ZIP_PATH" HEAD -- . ':(exclude)docs/ai' ':(exclude).omc' 2>/dev/null || true
+    # Fallback (e.g. no zip binary): git archive ships tracked files only, so a
+    # tracked secret (a committed .env, an AI CLI auth dir, a key) would still
+    # ride out. Mirror the zip exclusion set above via pathspecs so this path is
+    # not a credential-leak bypass when `zip` is unavailable.
+    git archive --format=zip -o "$ZIP_PATH" HEAD -- . \
+      ':(exclude)docs/ai' ':(exclude).omc' \
+      ':(glob,exclude)**/.env' ':(exclude).env' ':(glob,exclude)**/.env.*' ':(exclude).env.*' \
+      ':(glob,exclude)**/.claude/**' ':(exclude).claude/**' \
+      ':(glob,exclude)**/.codex/**' ':(exclude).codex/**' \
+      ':(glob,exclude)**/.ssh/**' ':(exclude).ssh/**' ':(glob,exclude)**/.aws/**' ':(exclude).aws/**' \
+      ':(glob,exclude)**/.netrc' ':(exclude).netrc' ':(glob,exclude)**/.git-credentials' ':(exclude).git-credentials' \
+      ':(glob,exclude)**/.npmrc' ':(exclude).npmrc' ':(glob,exclude)**/.pypirc' ':(exclude).pypirc' \
+      ':(glob,exclude)**/id_rsa*' ':(exclude)id_rsa*' ':(glob,exclude)**/id_dsa*' ':(exclude)id_dsa*' \
+      ':(glob,exclude)**/id_ecdsa*' ':(exclude)id_ecdsa*' ':(glob,exclude)**/id_ed25519*' ':(exclude)id_ed25519*' \
+      ':(glob,exclude)**/*.pem' ':(exclude)*.pem' ':(glob,exclude)**/*.key' ':(exclude)*.key' \
+      ':(glob,exclude)**/*.p12' ':(exclude)*.p12' ':(glob,exclude)**/*.pfx' ':(exclude)*.pfx' \
+      ':(glob,exclude)**/*.ppk' ':(exclude)*.ppk' ':(glob,exclude)**/*.jks' ':(exclude)*.jks' \
+      ':(glob,exclude)**/*.keystore' ':(exclude)*.keystore' 2>/dev/null || true
   fi
   [ -f "$ZIP_PATH" ] && RESULT_ZIP="$ZIP_PATH"
 fi
