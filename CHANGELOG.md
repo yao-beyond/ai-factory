@@ -10,6 +10,13 @@ this project follows [Semantic Versioning](https://semver.org/) once it reaches 
 - Initial public release scaffolding (License, Contributing, Security, Code of Conduct).
 - GitHub Actions CI: gateway Maven build + shellcheck.
 - Issue and PR templates.
+- Release workflow builds a **multi-arch** image (`linux/amd64` + `linux/arm64`);
+  the Dockerfile fetches kubectl per `TARGETARCH`.
+
+### Changed
+- Release workflow advances the `:latest` tag only for **stable** releases; a
+  semver prerelease tag (e.g. `v0.2.0-rc1`) publishes its version tag without
+  moving `:latest`.
 
 ## [0.1.0] - 2026-05-03
 
