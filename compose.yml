@@ -4,13 +4,15 @@
 #   2. cp config/ai-factory.example.yml ai-factory.yml   # then edit
 #   3. docker compose up
 #
+# This pulls a prebuilt image from GHCR — no local build required.
+# To build from source instead (developers):
+#   docker compose -f compose.yml -f compose.build.yml up --build
+#
 # The gateway listens on http://localhost:8080. It runs the bash pipeline
 # in-process (local mode); no Kubernetes required.
 services:
   gateway:
-    build:
-      context: ./gateway
-    image: ai-factory-gateway:local
+    image: ghcr.io/yao-beyond/ai-factory-gateway:latest
     ports:
       - "8080:8080"
     environment:

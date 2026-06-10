@@ -1,0 +1,10 @@
+# Developer override: build the gateway image from source instead of pulling
+# the prebuilt GHCR image.
+#
+#   docker compose -f compose.yml -f compose.build.yml up --build
+#
+services:
+  gateway:
+    build:
+      context: ./gateway
+    image: ai-factory-gateway:local

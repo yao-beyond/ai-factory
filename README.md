@@ -46,6 +46,8 @@
 
 > 簡單說：**幫你從 0 到「一份可審查的草稿」**，最後的決定與責任，永遠是你的。
 
+> 🔐 **你的資料去哪了？（誠實說）** AI Factory 是「自架的調度平台」，但它背後是呼叫 **Claude / Codex 官方 CLI**——所以你的**需求描述與程式碼會送到 Anthropic / OpenAI 的雲端 API** 處理。自架的是「生產線與成果（你的 API key、產出的程式碼都在你手上）」，**不是「資料完全不外流」**。在意隱私的請依此判斷。
+
 ---
 
 ## 🎬 看「幫我想想」怎麼運作
@@ -95,11 +97,13 @@
     ```bash
     bash scripts/doctor.sh
     ```
-3.  **開工啟動**：
+3.  **開工啟動**（會自動拉取預建好的雲端映像檔，**不需自己 build**）：
     ```bash
     docker compose up
     ```
     *啟動後，請開啟瀏覽器訪問：[http://localhost:8080](http://localhost:8080)*
+
+    > 想從原始碼自己 build（開發者）：`docker compose -f compose.yml -f compose.build.yml up --build`
 
 ---
 

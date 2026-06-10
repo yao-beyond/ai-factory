@@ -51,6 +51,8 @@ Our principle is **"claims must match reality — never overpromise"**, so here'
 
 > In short: it gets you **from 0 to a reviewable draft** — the final decision and responsibility are always yours.
 
+> 🔐 **Where does your data go? (the honest answer)** AI Factory is a *self-hosted orchestrator*, but under the hood it calls the **official Claude / Codex CLIs** — so your **request text and code are sent to Anthropic / OpenAI cloud APIs** for processing. What you self-host is the *pipeline and the output* (your API keys and the generated code stay with you) — it is **not** "your data never leaves your machine." Judge accordingly if privacy matters to you.
+
 ---
 
 ## 🎬 How "Discovery" works
@@ -99,11 +101,13 @@ bash scripts/ai-factory-init.sh
 # 2. Health check (confirms tokens, AI tools and connectivity; errors explained in plain language)
 bash scripts/doctor.sh
 
-# 3. Start (serves http://localhost:8080)
+# 3. Start — pulls a prebuilt image from GHCR, no local build needed (serves http://localhost:8080)
 docker compose up
 ```
 
 Then open your browser at **http://localhost:8080**
+
+> Prefer to build from source (developers)? `docker compose -f compose.yml -f compose.build.yml up --build`
 
 ---
 
