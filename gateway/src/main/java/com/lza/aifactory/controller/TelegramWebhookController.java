@@ -12,6 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestClient;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -44,7 +46,7 @@ public class TelegramWebhookController {
             @RequestBody JsonNode payload) throws Exception {
 
         if (telegramSecret != null && !telegramSecret.isBlank()
-                && !telegramSecret.equals(secretHeader)) {
+                && !constantTimeEquals(telegramSecret, secretHeader)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "invalid_telegram_secret"));
         }
@@ -80,6 +82,14 @@ public class TelegramWebhookController {
         } catch (Exception e) {
             log.warn("Failed to send Telegram inline buttons for {}: {}", record.taskId(), e.getMessage());
         }
+    }
+
+    /** Length-independent, constant-time secret comparison (null-safe). */
+    private static boolean constantTimeEquals(String expected, String actual) {
+        if (actual == null) return false;
+        return MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8),
+                actual.getBytes(StandardCharsets.UTF_8));
     }
 
     private IssueDto parseTelegramIssue(String text, Long chatId) {

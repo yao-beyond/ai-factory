@@ -51,18 +51,29 @@ The gateway runs `bash` pipeline scripts and (in K8s mode) creates Jobs in your 
   `summary.md` / `plan_summary.md` are passed through a secret-redaction filter
   (token shapes, `user:secret@host` URLs, `key=value` secrets, auth headers)
   before they are shown in the UI.
-- **Deliverable hygiene.** The downloadable `result.zip` excludes git metadata
-  (root *and* nested `.git`), `.env*`, AI CLI auth dirs (`.claude`, `.codex`),
-  and common private-key files, so a credential cannot ride out in the archive.
+- **Deliverable hygiene (egress).** The downloadable `result.zip` excludes git
+  metadata (root *and* nested `.git`), `.env*`, SSH/cloud/CLI auth dirs
+  (`.ssh`, `.aws`, `.claude`, `.codex`), credential files (`.netrc`,
+  `.git-credentials`, `.npmrc`, `.pypirc`), and common private-key files.
+- **Upload hygiene (ingress).** An uploaded project zip is filtered on the way
+  in by the same rules (`ArchiveExtractor`), so a credential in someone's
+  archive is never written into the workspace the AI agent runs in.
 - **No git token on disk in the repo.** Repo-mode transport authenticates via a
-  just-in-time askpass helper (`scripts/lib/git-auth.sh`): the clone URL stored
-  in `.git/config` is always credential-free, the token is staged in a `0600`
-  file *outside* the worktree (removed on exit), and its value is exposed only
-  inline for a single git network command — never to the AI CLI's environment.
+  just-in-time askpass helper (`scripts/lib/git-auth.sh`): the `origin` URL in
+  `.git/config` is forced credential-free on every run (covering reused
+  workspaces), the token is staged in a `0600` file *outside* the worktree
+  (removed on exit), and its value is exposed only inline for a single git
+  network command — never to the AI CLI's environment or even as a file pointer.
+- **PR output redaction.** PR title/body are scrubbed of token shapes and
+  `user:secret@host` URLs before they are sent to the provider.
+- **Webhook authentication (optional, enforced when set).** `/webhook/jira`
+  accepts a shared secret (`ai-factory.jira-webhook-secret`, via the
+  `X-AIFactory-Webhook-Secret` header or a `?secret=` query param) and
+  `/webhook/telegram` its bot secret token; when configured they are required
+  and compared in constant time. **When unset, requests are accepted** — put the
+  gateway behind network/auth controls and set these secrets in production.
 - **Remaining hardening (tracked):** the gateway process passes its full
-  environment to the pipeline; the token file, while outside the worktree, is
-  still on a filesystem the same-user AI process could read if it went looking
-  (full isolation needs a separate-user/sandbox model); uploaded-zip import does
-  not yet strip secrets on the way in; and the Jira webhook has no signature
-  check (set network/auth controls in front of it). Review
+  environment to the pipeline, and the staged token file — though outside the
+  worktree — sits on a filesystem the same-user AI process could read if it went
+  looking (full isolation needs a separate-user / sandbox model). Review
   `docs/RELEASE_NOTES_v0.1.0.md` before exposing the gateway publicly.

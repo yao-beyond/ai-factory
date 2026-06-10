@@ -18,6 +18,10 @@ ai-factory:
   pipeline-script: ${AI_FACTORY_PIPELINE_SCRIPT:/opt/ai-pipeline/run-task.sh}
   telegram-secret: ${TELEGRAM_WEBHOOK_SECRET:}
   telegram-bot-token: ${TELEGRAM_BOT_TOKEN:}
+  # Optional shared secret for the Jira webhook. When set, /webhook/jira requires
+  # it (X-AIFactory-Webhook-Secret header or ?secret= query param). Leave empty
+  # to accept unauthenticated calls (only behind network/auth controls).
+  jira-webhook-secret: ${JIRA_WEBHOOK_SECRET:}
   # Externally reachable base URL, used to build links (e.g. Telegram buttons).
   public-base-url: ${AI_FACTORY_PUBLIC_BASE_URL:http://localhost:8080}
   # Comma-separated allowlist of repositories that may be targeted. Wildcards (*)

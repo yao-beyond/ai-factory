@@ -4,23 +4,47 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.lza.aifactory.dto.IssueDto;
 import com.lza.aifactory.dto.TaskRecord;
 import com.lza.aifactory.service.TaskService;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/webhook")
 public class JiraWebhookController {
-    private final TaskService taskService;
+    private static final String SECRET_HEADER = "X-AIFactory-Webhook-Secret";
 
-    public JiraWebhookController(TaskService taskService) {
+    private final TaskService taskService;
+    private final String jiraSecret;
+
+    public JiraWebhookController(TaskService taskService,
+                                 @Value("${ai-factory.jira-webhook-secret:}") String jiraSecret) {
         this.taskService = taskService;
+        this.jiraSecret = jiraSecret;
     }
 
     @PostMapping("/jira")
-    public ResponseEntity<TaskRecord> jira(@RequestBody JsonNode payload) throws Exception {
+    public ResponseEntity<?> jira(
+            @RequestHeader(value = SECRET_HEADER, required = false) String headerSecret,
+            @RequestParam(value = "secret", required = false) String querySecret,
+            @RequestBody JsonNode payload) throws Exception {
+
+        // Optional shared secret (set ai-factory.jira-webhook-secret in production
+        // — Jira can pass it as a header or a ?secret= query param). When unset,
+        // behaviour is unchanged; put the gateway behind network/auth controls.
+        if (jiraSecret != null && !jiraSecret.isBlank()
+                && !constantTimeEquals(jiraSecret, headerSecret)
+                && !constantTimeEquals(jiraSecret, querySecret)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "invalid_jira_secret"));
+        }
+
         JsonNode issue = payload.path("issue");
         JsonNode fields = issue.path("fields");
 
@@ -66,5 +90,13 @@ public class JiraWebhookController {
             for (JsonNode child : content) collectAdfText(child, sb);
             sb.append('\n');
         }
+    }
+
+    /** Length-independent, constant-time secret comparison (null-safe). */
+    private static boolean constantTimeEquals(String expected, String actual) {
+        if (actual == null) return false;
+        return MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8),
+                actual.getBytes(StandardCharsets.UTF_8));
     }
 }

@@ -50,6 +50,36 @@ git_repo_path() {
 }
 REPO_PATH="$(git_repo_path "${REPO_URL:-}")"
 
+# Redact any secret that slipped into the PR title/body (e.g. an operator-set
+# PR_BODY, or an AI-authored summary) before it is sent to the provider and
+# becomes a permanent, world-readable part of the PR.
+aif_redact() {
+  # Mirrors gateway TaskService.redactSecrets: provider token shapes,
+  # user:secret@host URLs, secret-ish key=value / key: value assignments
+  # (token/secret/password/passwd/pwd/api_key/access_key/private_key/credential),
+  # Authorization|auth headers, and Bearer/Basic tokens. Case-insensitive keyword
+  # matching is spelled out with explicit classes so it works on both GNU and BSD
+  # sed (no GNU-only `I` flag).
+  # NOTE: the Java AWS_SECRET_BARE rule (a context-free 40-char base64 secret) is
+  # intentionally NOT mirrored here — pinning "exactly 40 AND contains +/" needs
+  # lookahead that POSIX ERE lacks, and a looser rule would mangle file paths and
+  # commit SHAs common in PR bodies. The contextual aws_*_key= form is covered by
+  # the assignment rule above.
+  printf '%s' "${1:-}" | sed -E \
+    -e 's#([a-zA-Z][a-zA-Z0-9+.-]*://)[^/[:space:]:@]+:[^/[:space:]@]+@#\1<redacted>@#g' \
+    -e 's#gh[posru]_[A-Za-z0-9]{16,}#<redacted>#g' \
+    -e 's#glpat-[A-Za-z0-9_-]{16,}#<redacted>#g' \
+    -e 's#xox[baprs]-[A-Za-z0-9-]{10,}#<redacted>#g' \
+    -e 's#AKIA[0-9A-Z]{16}#<redacted>#g' \
+    -e 's#sk-[A-Za-z0-9]{20,}#<redacted>#g' \
+    -e 's#AIza[0-9A-Za-z_-]{20,}#<redacted>#g' \
+    -e 's#([A-Za-z0-9_-]*([Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Pp][Ww][Dd]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Aa][Cc][Cc][Ee][Ss][Ss][_-]?[Kk][Ee][Yy]|[Pp][Rr][Ii][Vv][Aa][Tt][Ee][_-]?[Kk][Ee][Yy]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll])[A-Za-z0-9_-]*[[:space:]]*[:=][[:space:]]*)([Bb]earer[[:space:]]+|[Bb]asic[[:space:]]+)?[^[:space:]]+#\1<redacted>#g' \
+    -e 's#(^|[^A-Za-z0-9_])([Aa][Uu][Tt][Hh]([Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn])?[[:space:]]*[:=][[:space:]]*).+#\1\2<redacted>#g' \
+    -e 's#([Bb]earer|[Bb]asic)[[:space:]]+[A-Za-z0-9._+/=-]{8,}#\1 <redacted>#g'
+}
+PR_TITLE="$(aif_redact "$PR_TITLE")"
+PR_BODY="$(aif_redact "$PR_BODY")"
+
 export TASK_ID GIT_PROVIDER TARGET_BRANCH SOURCE_BRANCH PR_DRAFT PR_LABEL PR_TITLE PR_BODY REPO_URL REPO_PATH
 
 echo "Creating pull request via provider=${GIT_PROVIDER}: ${SOURCE_BRANCH} -> ${TARGET_BRANCH} (draft=${PR_DRAFT})"
