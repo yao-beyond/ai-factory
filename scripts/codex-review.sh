@@ -17,6 +17,8 @@ FINAL_BRANCH="ai/${TASK_ID}/final"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/lib/ai-retry.sh"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/lib/git-auth.sh"
 
 git checkout "$FINAL_BRANCH"
 if [ "${PROJECT_MODE:-existing}" = "local" ]; then
@@ -25,7 +27,7 @@ if [ "${PROJECT_MODE:-existing}" = "local" ]; then
   git rev-parse --verify "$DIFF_BASE" >/dev/null 2>&1 || DIFF_BASE="$TARGET_BRANCH"
   git diff "${DIFF_BASE}...$FINAL_BRANCH" > "/tmp/diff-${TASK_ID}.patch"
 else
-  git fetch origin "$TARGET_BRANCH"
+  aif_git fetch origin "$TARGET_BRANCH"
   git diff "origin/${TARGET_BRANCH}...$FINAL_BRANCH" > "/tmp/diff-${TASK_ID}.patch"
 fi
 
@@ -52,5 +54,5 @@ fi
 
 git add docs/ai/CODEX_REVIEW.md
 git commit -m "review(${TASK_ID}): add Codex review" || true
-[ "${PROJECT_MODE:-existing}" != "local" ] && git push origin "$FINAL_BRANCH"
+[ "${PROJECT_MODE:-existing}" != "local" ] && aif_git push origin "$FINAL_BRANCH"
 true

@@ -26,6 +26,8 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/git/branch-guard.sh"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/lib/git-auth.sh"
 
 choose_default() {
   for i in $(seq 1 "$MAX_AGENTS"); do
@@ -72,6 +74,6 @@ git add docs/ai/SELECTED_AGENT.txt
 git commit -m "chore(${TASK_ID}): select dev-${CHOSEN} as final" || true
 if [ "${PROJECT_MODE:-existing}" != "local" ]; then
   aif_assert_push_allowed "ai/${TASK_ID}/final"
-  git push -u origin "ai/${TASK_ID}/final" --force-with-lease
-  git push
+  aif_git push -u origin "ai/${TASK_ID}/final" --force-with-lease
+  aif_git push
 fi

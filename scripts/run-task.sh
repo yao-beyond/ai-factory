@@ -49,6 +49,16 @@ if [ -f "${PIPELINE_DIR}/config/load-config.sh" ]; then
   fi
 fi
 
+# Authenticated git transport that never persists the token in .git/config or
+# exposes it to the AI CLI (see lib/git-auth.sh). Sourced for both this script
+# and — via the same file — the child scripts that push.
+if [ -f "${PIPELINE_DIR}/lib/git-auth.sh" ]; then
+  # shellcheck source=/dev/null
+  source "${PIPELINE_DIR}/lib/git-auth.sh"
+fi
+# Fallback so a missing lib never breaks plain (e.g. public / local) git ops.
+declare -F aif_git >/dev/null 2>&1 || aif_git() { git "$@"; }
+
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
 MAX_AGENTS="${MAX_AGENTS:-3}"
 # Clamp to a sane range so a bad issue.json/env value can't spawn a runaway
@@ -198,14 +208,25 @@ if [ "$LOCAL_MODE" = true ]; then
     git commit --allow-empty -m "chore: initialize new project" >/dev/null
   fi
 else
+  # Resolve auth and rewrite REPO_URL to its credential-free form, so the token
+  # is never written into .git/config (and never shows up in the status feed).
+  if declare -F aif_git_auth_setup >/dev/null 2>&1; then
+    aif_git_auth_setup "$REPO_URL"      # sets AIF_GIT_CLEAN_URL + exports (no subshell!)
+    REPO_URL="$AIF_GIT_CLEAN_URL"
+    trap 'aif_git_auth_cleanup' EXIT
+  fi
   set_status RUNNING "cloning $REPO_URL"
   if [ ! -d repo/.git ]; then
-    git clone "$REPO_URL" repo
+    aif_git clone "$REPO_URL" repo
   fi
   cd repo
-  git fetch origin
+  # Force origin to the credential-free URL on every run — a reused workspace
+  # from a previous run may still carry a token-in-URL origin in .git/config.
+  # Auth is supplied out-of-band by aif_git (askpass), not by the remote URL.
+  git remote set-url origin "$REPO_URL" 2>/dev/null || true
+  aif_git fetch origin
   git checkout "$TARGET_BRANCH"
-  git pull origin "$TARGET_BRANCH"
+  aif_git pull origin "$TARGET_BRANCH"
 fi
 
 # Local mode never has a remote. Disable any credential helper at the REPO level

@@ -15,6 +15,8 @@ FINAL_BRANCH="ai/${TASK_ID}/final"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/lib/ai-retry.sh"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/lib/git-auth.sh"
 
 git checkout "$FINAL_BRANCH"
 
@@ -41,5 +43,5 @@ fi
 
 git add -A
 git commit -m "fix(${TASK_ID}): address Codex review" || true
-[ "${PROJECT_MODE:-existing}" != "local" ] && git push origin "$FINAL_BRANCH"
+[ "${PROJECT_MODE:-existing}" != "local" ] && aif_git push origin "$FINAL_BRANCH"
 true

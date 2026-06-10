@@ -54,8 +54,15 @@ The gateway runs `bash` pipeline scripts and (in K8s mode) creates Jobs in your 
 - **Deliverable hygiene.** The downloadable `result.zip` excludes git metadata
   (root *and* nested `.git`), `.env*`, AI CLI auth dirs (`.claude`, `.codex`),
   and common private-key files, so a credential cannot ride out in the archive.
+- **No git token on disk in the repo.** Repo-mode transport authenticates via a
+  just-in-time askpass helper (`scripts/lib/git-auth.sh`): the clone URL stored
+  in `.git/config` is always credential-free, the token is staged in a `0600`
+  file *outside* the worktree (removed on exit), and its value is exposed only
+  inline for a single git network command — never to the AI CLI's environment.
 - **Remaining hardening (tracked):** the gateway process passes its full
-  environment to the pipeline; uploaded-zip import does not yet strip secrets
-  on the way in; and the Jira webhook has no signature check (set network/auth
-  controls in front of it). Review `docs/RELEASE_NOTES_v0.1.0.md` before
-  exposing the gateway publicly.
+  environment to the pipeline; the token file, while outside the worktree, is
+  still on a filesystem the same-user AI process could read if it went looking
+  (full isolation needs a separate-user/sandbox model); uploaded-zip import does
+  not yet strip secrets on the way in; and the Jira webhook has no signature
+  check (set network/auth controls in front of it). Review
+  `docs/RELEASE_NOTES_v0.1.0.md` before exposing the gateway publicly.

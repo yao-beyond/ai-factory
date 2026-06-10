@@ -28,6 +28,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/git/branch-guard.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/lib/ai-retry.sh"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/lib/git-auth.sh"
 
 # IMPLEMENTATION_PLAN.md is generated at runtime by codex-plan.sh inside the
 # cloned target repo. It is *not* a static file in the ai-factory repo. If we
@@ -95,5 +97,5 @@ if [ "${PROJECT_MODE:-existing}" != "local" ]; then
   aif_assert_push_allowed "$BRANCH"
   # --force-with-lease so a re-run can overwrite a stale dev branch left on the
   # remote by a previous attempt (these ai/<task>/dev-* branches are ours).
-  git push -u --force-with-lease origin "$BRANCH"
+  aif_git push -u --force-with-lease origin "$BRANCH"
 fi
