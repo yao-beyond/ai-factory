@@ -5,12 +5,20 @@
 <h1 align="center">LZA 🫧 粉圓軟體工廠</h1>
 
 <p align="center">
-  <strong>「你的想法，就是生產線的起點。」—— 粉圓 Fen-Yuan</strong><br>
-  讓創意落地，為開發加持：<b>由你把關</b>的 AI 軟體工廠。
+  <strong>「比起什麼都說好，粉圓更想先告訴你哪裡是懸崖。」—— 粉圓 Fen-Yuan</strong><br>
+  當大家都在追「一句話生出系統」，我們專注讓你<b>睡得著覺</b>：<br>
+  做不到的不會出現在選項裡、產出全程透明、<b>你點頭才開工</b>——<br>
+  這不是魔法，是可自架、可控管的 AI 軟體<b>草稿</b>工廠。
 </p>
 
 <p align="center">
   <b>正體中文</b> | <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
+  <a href="https://www.producthunt.com/products/pinkie-software-factory?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-pinkie-software-factory" target="_blank">
+    <img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1168748&theme=dark" alt="Pinkie Software Factory - Your idea in, a reviewable draft out — you stay in control | Product Hunt" width="250" height="54" />
+  </a>
 </p>
 
 ---
@@ -22,7 +30,7 @@
 你只需要用白話文描述你的需求（例如：「幫我在網頁左上角加一個深藍色的回饋按鈕」），AI 就會自動為你：
 1. **拆解計畫**：把你的願望變成具體的工程步驟。
 2. **多工開發**：派出多個 AI 機器人同時嘗試不同的寫法。
-3. **優中選優**：自動挑選出最穩定、最符合規範的成果。
+3. **優中選優**：用固定的健檢規則（安全、邊界、可預覽性）挑出最可靠的成果，並附上**評選報告**——為什麼選這一版、其他版為什麼落選，每一分都有依據。
 4. **交付成果**：幫你開好 Pull Request（給工程師審查）或直接讓你下載整份專案。
 
 > 🤔 **還不知道要做什麼？** 試試首頁的「**幫我想想**」——回答兩個小問題、挑一張具體的成品卡片，沒頭緒也能開始。

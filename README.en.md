@@ -5,12 +5,20 @@
 <h1 align="center">LZA 🫧 Pinkie Software Factory</h1>
 
 <p align="center">
-  <strong>"Your idea is the start of the production line." — Pinkie (粉圓)</strong><br>
-  Turn ideas into reality, amplify developers — a <b>human-in-the-loop</b> AI software factory.
+  <strong>"Rather than promising everything, Pinkie would rather show you where the cliff is." — Pinkie (粉圓)</strong><br>
+  While the world chases "a whole system from one sentence", we focus on letting you <b>sleep at night</b>:<br>
+  what can't be built never shows up as an option, every output is reviewable, and <b>nothing starts until you approve</b> —<br>
+  not magic, but a self-hostable, governable AI software <b>draft</b> factory.
 </p>
 
 <p align="center">
   <a href="README.md">正體中文</a> | <b>English</b>
+</p>
+
+<p align="center">
+  <a href="https://www.producthunt.com/products/pinkie-software-factory?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-pinkie-software-factory" target="_blank">
+    <img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1168748&theme=dark" alt="Pinkie Software Factory - Your idea in, a reviewable draft out — you stay in control | Product Hunt" width="250" height="54" />
+  </a>
 </p>
 
 ---
@@ -25,7 +33,7 @@ button to the top-left of the web page"), and the AI will automatically:
 
 1. **Plan** — turn your wish into concrete engineering steps.
 2. **Build in parallel** — send several AI agents to try different approaches at once.
-3. **Pick the best** — automatically choose the most stable, compliant result.
+3. **Pick the best** — choose the most reliable result via fixed health checks (safety, capability boundary, previewability), with a **selection report** explaining why this version won and why the others lost. Every point is evidence-backed.
 4. **Deliver** — open a Pull Request for an engineer to review, or just let you download the whole project.
 
 Works with **GitHub / GitLab / Bitbucket**, and is designed to drop into systems you already have.
