@@ -1,0 +1,33 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "30 2 * * 1" # weekly, Monday 02:30 UTC — catches newly published query packs
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (Java)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload SARIF results to the Security tab
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          build-mode: none # source-only extraction; no Maven build needed
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java-kotlin"

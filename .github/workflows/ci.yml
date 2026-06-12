@@ -37,6 +37,29 @@ jobs:
           path: gateway/target/ai-factory-gateway-*.jar
           retention-days: 7
 
+  security:
+    name: Vulnerability & secret scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Scans Maven dependencies (pom.xml) for known CVEs and the whole tree for
+      # committed secrets. Fails the build on CRITICAL/HIGH with an available fix.
+      # gateway/src/test is skipped: the redaction tests there embed deliberately
+      # fake token-shaped fixtures (AWS doc-example keys etc.) that the secret
+      # scanner would flag; dependency scanning loses nothing since it only reads
+      # pom.xml.
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-dirs: gateway/src/test
+
   scripts:
     name: Pipeline scripts (shellcheck)
     runs-on: ubuntu-latest
