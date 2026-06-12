@@ -2,6 +2,7 @@ package com.lza.aifactory.controller;
 
 import com.lza.aifactory.dto.TaskRecord;
 import com.lza.aifactory.dto.TaskStatus;
+import com.lza.aifactory.service.CostEstimateService;
 import com.lza.aifactory.service.EtaService;
 import com.lza.aifactory.service.TaskService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,10 +32,13 @@ import java.util.Map;
 public class TaskController {
     private final TaskService taskService;
     private final EtaService etaService;
+    private final CostEstimateService costEstimateService;
 
-    public TaskController(TaskService taskService, EtaService etaService) {
+    public TaskController(TaskService taskService, EtaService etaService,
+                          CostEstimateService costEstimateService) {
         this.taskService = taskService;
         this.etaService = etaService;
+        this.costEstimateService = costEstimateService;
     }
 
     @GetMapping("/status/{taskId}")
@@ -263,6 +267,8 @@ public class TaskController {
                 .summary h4{font-size:14px;margin:8px 0 4px;}
                 .summary ul{margin:4px 0;padding-left:20px;}
                 .summary li,.summary p{font-size:14px;color:#3d4248;margin:3px 0;}
+                .selreport{margin:6px 0 10px;}
+                .selreport>summary{cursor:pointer;font-size:14px;font-weight:600;color:#1a7f4e;}
                 .ask{font-size:14px;line-height:1.6;}
                 .btn{display:inline-block;margin:12px 0 4px;background:#1f883d;color:#fff;
                      text-decoration:none;padding:11px 18px;border-radius:8px;font-weight:600;}
@@ -499,6 +505,20 @@ public class TaskController {
                         .formatted(esc(defaultId)));
             }
 
+            // Honest "price of admission" before the user approves: a rough token
+            // range derived from the agent count and plan size. No fabricated
+            // dollar figures — pricing depends on the user's own AI plan.
+            int agents = taskService.readMaxAgents(r.taskId());
+            CostEstimateService.TokenRange cost =
+                    costEstimateService.estimate(agents, planText.length());
+            String costHtml = """
+                <div class="cost">🪙 預估 AI 用量：約 <b>%d ～ %d 萬</b> tokens
+                  <div class="cost-sub">tokens 是 AI 的工作量單位——%d 位 AI 工程師會用它來讀計畫、寫程式、跑測試。
+                  這是開工前的粗估，實際消耗會依任務複雜度與執行的測試量彈性調整。訂閱制方案通常只是消耗每月額度；
+                  用 API 金鑰計費的話，費用請參考你的 AI 供應商定價。</div>
+                </div>
+                """.formatted(cost.lowWan(), cost.highWan(), agents);
+
             String id = esc(r.taskId());
             return """
                 <style>
@@ -523,9 +543,13 @@ public class TaskController {
                                      padding:6px 12px;font-size:13px;cursor:pointer;}
                   .plan-tools .reset:hover{background:#fbcfe8;}
                   .hint{font-size:13px;color:#656d76;margin:6px 0 0;}
+                  .cost{background:#fffbeb;border:1px solid #f0d999;border-radius:10px;
+                        padding:10px 14px;margin:12px 0 4px;font-size:14px;color:#1f2328;}
+                  .cost-sub{font-size:12px;color:#8a6d3b;margin-top:4px;line-height:1.5;}
                 </style>
                 <div class="result await">
                   <h2>📝 粉圓想跟你對一下開工方向！</h2>
+                  %s
                   %s
                   %s
                   <div class="confirm-actions">
@@ -572,11 +596,18 @@ public class TaskController {
                       .catch(function(){ alert('操作失敗，請稍後重試'); reenable(); });
                   }
                 </script>
-                """.formatted(plan, optionsHtml.toString(), id);
+                """.formatted(plan, optionsHtml.toString(), costHtml, id);
         }
         if (s == TaskStatus.COMPLETED) {
             String summary = taskService.readSummary(r.taskId())
                     .map(md -> "<div class=\"sumtitle\">AI 做了這些變更：</div>" + renderSummaryHtml(md))
+                    .orElse("");
+            // Evidence-based selection report: collapsed by default so the page
+            // stays friendly, but the "why this version won" audit trail is one
+            // click away (transparency over black-box selection).
+            String selection = taskService.readSelectionReport(r.taskId())
+                    .map(md -> "<details class=\"selreport\"><summary>🏆 AI 選手比稿評選報告（為什麼選這一版）</summary>"
+                            + renderSummaryHtml(md) + "</details>")
                     .orElse("");
             // New-project (local) result: a downloadable project, no git/PR wording.
             // Gate on the authoritative mode, not the result.zip artifact.
@@ -590,15 +621,22 @@ public class TaskController {
                 String preview = taskService.hasPreview(r.taskId())
                         ? "<a class=\"btn\" href=\"/gateway/preview/" + esc(r.taskId()) + "/\" target=\"_blank\" rel=\"noopener\">👀 線上預覽成果</a>"
                         : "";
+                // Advertise the plain-language guided tour — but only when this
+                // task's deliverable actually contains one (older tasks don't).
+                String explainerNote = taskService.hasExplainer(r.taskId())
+                        ? "<p class=\"ask\">📖 隨附一份 <b>EXPLAINER.md</b>——粉圓為你準備的白話導覽。解壓縮後請先閱讀它，了解 AI 幫你做了哪些改動！</p>"
+                        : "";
                 return """
                     <div class="result ok">
                       <h2>✅ 你的全新專案做好了</h2>
                       %s
                       %s
                       %s
+                      %s
+                      %s
                       <p class="ask">%s想保留或進一步調整，下載 zip 後交給工程師、或之後用「線上發布」功能即可。</p>
                     </div>
-                    """.formatted(summary, preview, dl,
+                    """.formatted(summary, selection, preview, dl, explainerNote,
                         preview.isEmpty() ? "" : "點「線上預覽」就能直接在瀏覽器看成果。");
             }
             // Existing-repo result: a reviewable pull request.
@@ -610,10 +648,11 @@ public class TaskController {
                   <h2>✅ AI 已經完成你要求的工作了</h2>
                   %s
                   %s
+                  %s
                   <p class="ask">下一步：請工程師（或有合併權限的同事）按下「合併」讓變更正式生效。
                   不確定的話，把這個頁面連結傳給工程師就好。AI 不會自己改動正式版本，你可以放心。</p>
                 </div>
-                """.formatted(summary, button);
+                """.formatted(summary, selection, button);
         }
         if (s == TaskStatus.FAILED) {
             String msg = orDash(r.message());

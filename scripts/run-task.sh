@@ -425,6 +425,16 @@ if [ "$LOCAL_MODE" = true ]; then
   if git rev-parse --verify "ai/${TASK_ID}/final" >/dev/null 2>&1; then
     git checkout "ai/${TASK_ID}/final" >/dev/null 2>&1 || true
   fi
+  # Plain-language EXPLAINER.md at the project root, so the zip opens with a
+  # guided tour instead of bare code. Best-effort: a failed explainer must
+  # never block the deliverable. Committed so the git-archive fallback below
+  # (tracked files only) ships it too.
+  set_status FIXING "writing plain-language explainer"
+  bash "${PIPELINE_DIR}/explainer.sh" "$TASK_ID" || true
+  if [ -s EXPLAINER.md ]; then
+    git add EXPLAINER.md 2>/dev/null || true
+    git commit -q -m "docs(${TASK_ID}): add plain-language EXPLAINER" 2>/dev/null || true
+  fi
   ZIP_PATH="${BASE}/result.zip"
   rm -f "$ZIP_PATH"
   if command -v zip >/dev/null 2>&1; then

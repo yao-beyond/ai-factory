@@ -2,8 +2,21 @@ GATEWAY_IMAGE ?= your-registry/ai-factory-gateway:0.1.0
 AGENT_IMAGE ?= your-registry/ai-agent-orchestrator:0.1.0
 NS ?= ai-factory
 
-.PHONY: build-gateway build-agent build apply-namespace apply-secrets apply-rbac \
+.PHONY: test test-scripts coverage build-gateway build-agent build apply-namespace apply-secrets apply-rbac \
         apply-configmaps apply-gateway apply-k8s smoke-local
+
+# Run the gateway test suite (same command CI uses).
+test:
+	cd gateway && ./mvnw -B -ntp test
+
+# Behavior tests for the pipeline shell scripts (containment/fallback paths).
+test-scripts:
+	bash scripts/tests/explainer-test.sh
+
+# Run tests + produce the JaCoCo coverage report.
+coverage:
+	cd gateway && ./mvnw -B -ntp verify
+	@echo "Coverage report: gateway/target/site/jacoco/index.html"
 
 build-gateway:
 	docker build -t $(GATEWAY_IMAGE) gateway

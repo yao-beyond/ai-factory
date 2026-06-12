@@ -177,6 +177,26 @@ class WebUiTest {
     }
 
     @Test
+    void completedPageShowsSelectionReportWhenPresent() throws Exception {
+        String body = """
+                {"source":"web","mode":"new","externalId":"UAT-SELREPORT","title":"全新需求","description":"做個東西","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Path dir = workDir().resolve("UAT-SELREPORT");
+        java.nio.file.Files.createDirectories(dir);
+        java.nio.file.Files.writeString(dir.resolve("status.txt"),
+                "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=now\n");
+        java.nio.file.Files.writeString(dir.resolve("selection_report.md"),
+                "# 🏆 AI 候選評選報告\n- **錄取：候選 2**（總分 1202）\n- 落選：候選 1 — 總分較低\n");
+
+        mvc.perform(get("/gateway/ui/UAT-SELREPORT"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("評選報告")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("錄取：候選 2")));
+    }
+
+    @Test
     void tasksListPageRenders() throws Exception {
         mvc.perform(get("/gateway/ui"))
                 .andExpect(status().isOk())
@@ -303,6 +323,36 @@ class WebUiTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("線上預覽成果")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("下載你的專案")));
+    }
+
+    @Test
+    void completedPageAdvertisesExplainerOnlyWhenPresent() throws Exception {
+        String body = """
+                {"source":"web","mode":"new","externalId":"UAT-EXPL","title":"小工具","description":"做個東西","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Path dir = workDir().resolve("UAT-EXPL");
+        java.nio.file.Path repo = dir.resolve("workspace").resolve("repo");
+        java.nio.file.Files.createDirectories(repo);
+        // The work dir persists across JVM runs — drop a leftover explainer from
+        // a previous run so the "absent" half of this test stays idempotent.
+        java.nio.file.Files.deleteIfExists(repo.resolve("EXPLAINER.md"));
+        java.nio.file.Files.writeString(dir.resolve("status.txt"), "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=now\n");
+        java.nio.file.Files.write(dir.resolve("result.zip"), new byte[]{0x50, 0x4b, 0x05, 0x06});
+
+        // No EXPLAINER.md in the deliverable (an older task) — no note, no lying.
+        mvc.perform(get("/gateway/ui/UAT-EXPL"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("EXPLAINER.md"))));
+
+        // With the guided tour present, the completed page advertises it.
+        java.nio.file.Files.writeString(repo.resolve("EXPLAINER.md"), "# 導覽\n白話說明\n");
+        mvc.perform(get("/gateway/ui/UAT-EXPL"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("EXPLAINER.md")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("白話導覽")));
     }
 
     @Test
@@ -908,6 +958,21 @@ class WebUiTest {
                 // ETA must be hidden while waiting on a human.
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("預計還要"))));
+    }
+
+    @Test
+    void confirmPageShowsTokenCostEstimate() throws Exception {
+        // The confirm gate shows an honest "price of admission" — a token range,
+        // never a fabricated dollar figure (pricing depends on the user's plan).
+        putAwaitingTask("UAT-COST", true);
+        mvc.perform(get("/gateway/ui/UAT-COST"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("預估 AI 用量")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("萬</b> tokens")))
+                // putAwaitingTask submits maxAgents=1 — the estimate must echo it.
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("1 位 AI 工程師")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("US$"))));
     }
 
     @Test

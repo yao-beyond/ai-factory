@@ -279,6 +279,12 @@ public class TaskService {
         return resultDir(taskId).map(d -> Files.isRegularFile(d.resolve("index.html"))).orElse(false);
     }
 
+    /** True when the delivered project ships a plain-language EXPLAINER.md tour. */
+    public boolean hasExplainer(String taskId) {
+        if (!isNewProjectResult(taskId)) return false;
+        return resultDir(taskId).map(d -> Files.isRegularFile(d.resolve("EXPLAINER.md"))).orElse(false);
+    }
+
     /**
      * Authoritative check that this is a new-project (local) task. Read from the
      * issue.json written once at submit — NOT inferred from sibling artifacts like
@@ -327,9 +333,39 @@ public class TaskService {
         return readMarkdown(taskId, "summary.md");
     }
 
+    /**
+     * The task's requested parallel dev-agent count, for the confirm-gate cost
+     * estimate. Read from issue.json (the authoritative submit-time record) and
+     * clamped to the same 1–10 range run-task.sh enforces. A MAX_AGENTS env
+     * override outside the normal gateway path can still diverge; this estimate
+     * covers gateway-submitted tasks.
+     */
+    public int readMaxAgents(String taskId) {
+        Path issue = workDir.resolve(normalizeTaskId(taskId)).resolve("issue.json");
+        if (!Files.exists(issue)) return 3;
+        try {
+            IssueDto dto = objectMapper.readValue(Files.readString(issue), IssueDto.class);
+            Integer n = dto.getMaxAgents();
+            if (n == null) return 3;
+            return Math.min(10, Math.max(1, n));
+        } catch (IOException e) {
+            return 3;
+        }
+    }
+
     /** The plain-language plan summary shown at the pre-flight confirmation gate. */
     public Optional<String> readPlanSummary(String taskId) {
         return readMarkdown(taskId, "plan_summary.md");
+    }
+
+    /**
+     * The evidence-based candidate selection report the pipeline writes during
+     * SELECTING: per-candidate checks (summary, diff size, preview, boundary,
+     * secrets, conflicts), fixed scores, and why the winner won. Shown on the
+     * completed page so "select best" is auditable, not a black box.
+     */
+    public Optional<String> readSelectionReport(String taskId) {
+        return readMarkdown(taskId, "selection_report.md");
     }
 
     /**
