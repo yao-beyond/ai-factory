@@ -248,6 +248,11 @@ public class TaskController {
                 .bar{height:12px;background:#eaeef2;border-radius:999px;overflow:hidden;}
                 .fill{height:100%%;width:%d%%;background:%s;transition:width .5s ease;}
                 .pct{font-size:12px;color:#656d76;margin-top:6px;text-align:right;}
+                .steps{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 2px;justify-content:center;}
+                .ms{font-size:12px;border-radius:999px;padding:3px 10px;border:1px solid #d0d7de;
+                    color:#8b949e;background:#f6f8fa;white-space:nowrap;}
+                .ms.done{color:#1a7f37;border-color:#b7ebc9;background:#e9f7ef;}
+                .ms.now{color:#0969da;border-color:#9cd1ff;background:#ddf4ff;font-weight:700;}
                 .eta{font-size:14px;color:#1f2328;margin-top:10px;text-align:center;}
                 .eta b{color:#0969da;}
                 .result{margin-top:22px;padding:18px;border-radius:10px;}
@@ -308,6 +313,7 @@ public class TaskController {
                 %s
                 %s
                 %s
+                %s
                 <div class="meta">
                   <div>📝 你的需求：%s</div>
                   <div>🕒 更新時間：%s（UTC+8）</div>
@@ -328,12 +334,57 @@ public class TaskController {
                 esc(s.displayName()),
                 esc(friendlyMessage(r)),
                 s.progress(),
+                milestonesBlock(r),
                 resultBlock(r),
                 etaBlock(r),
                 controlsBlock(r),
                 activityBlock(r, running),
                 esc(orDash(r.title())),
                 esc(formatLocalTime(r.updatedAt())));
+    }
+
+    /**
+     * Plain-language factory milestones: where the task sits on the production
+     * line, as a row of step chips (done ✓ / current ● / upcoming ○). Driven by
+     * the status's canonical progress so it can never disagree with the bar.
+     * Hidden for FAILED/CANCELLED — the result block already explains those.
+     */
+    private String milestonesBlock(TaskRecord r) {
+        TaskStatus s = r.status();
+        if (s == TaskStatus.FAILED || s == TaskStatus.CANCELLED) return "";
+        record Step(String label, int progress) {}
+        List<Step> steps = List.of(
+                new Step("收到需求", 5),
+                new Step("構思方案", 25),
+                new Step("等你確認", 35),
+                new Step("平行開發", 45),
+                new Step("評選最佳", 65),
+                new Step("安全審查", 85),
+                new Step("修正收尾", 95),
+                new Step("完成", 100));
+        int p = s.progress();
+        boolean completed = s == TaskStatus.COMPLETED;
+        // Current = the furthest step the pipeline has reached (PAUSED's 50 maps
+        // back onto the development step it paused inside of).
+        int current = 0;
+        for (int i = 0; i < steps.size(); i++) {
+            if (steps.get(i).progress() <= p) current = i;
+        }
+        StringBuilder sb = new StringBuilder("<div class=\"steps\">");
+        for (int i = 0; i < steps.size(); i++) {
+            String cls;
+            String mark;
+            if (completed || i < current) {
+                cls = "ms done"; mark = "✓";
+            } else if (i == current) {
+                cls = "ms now"; mark = "●";
+            } else {
+                cls = "ms todo"; mark = "○";
+            }
+            sb.append("<span class=\"").append(cls).append("\">")
+              .append(mark).append(' ').append(esc(steps.get(i).label())).append("</span>");
+        }
+        return sb.append("</div>").toString();
     }
 
     /** Friendly "estimated time remaining" line, only while the task is running. */

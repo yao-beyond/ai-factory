@@ -427,6 +427,47 @@ class WebUiTest {
     }
 
     @Test
+    void taskPageShowsFactoryMilestonesWithCurrentStage() throws Exception {
+        putRunningTaskWithLog("UAT-MS", "working…\n");   // DEVELOPING
+        mvc.perform(get("/gateway/ui/UAT-MS"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("✓ 收到需求")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("ms now\">● 平行開發")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("○ 完成")));
+    }
+
+    @Test
+    void completedPageShowsAllMilestonesDone() throws Exception {
+        String body = """
+                {"source":"web","externalId":"UAT-MS-DONE","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Files.writeString(workDir().resolve("UAT-MS-DONE").resolve("status.txt"),
+                "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=now\n");
+        mvc.perform(get("/gateway/ui/UAT-MS-DONE"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("✓ 完成")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("ms now"))));
+    }
+
+    @Test
+    void cancelledPageHidesMilestones() throws Exception {
+        String body = """
+                {"source":"web","externalId":"UAT-MS-CANC","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Files.writeString(workDir().resolve("UAT-MS-CANC").resolve("status.txt"),
+                "STATUS=CANCELLED\nMESSAGE=cancelled_by_user\nUPDATED_AT=now\n");
+        mvc.perform(get("/gateway/ui/UAT-MS-CANC"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("收到需求"))));
+    }
+
+    @Test
     void completedPageHasNoLiveActivityFeed() throws Exception {
         String body = """
                 {"source":"web","externalId":"UAT-NOFEED","title":"t","description":"d","maxAgents":1}
