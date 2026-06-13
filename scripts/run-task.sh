@@ -12,8 +12,10 @@ WORK="${BASE}/workspace"
 STATUS_FILE="${BASE}/status.txt"
 
 # Clear stale control markers from a previous run of this id, so a fresh run
-# isn't immediately paused/cancelled by a leftover marker.
-rm -f "${BASE}/abort.requested" "${BASE}/pause.requested" 2>/dev/null || true
+# isn't immediately paused/cancelled by a leftover marker (and a stale refine
+# round can't answer a new one).
+rm -f "${BASE}/abort.requested" "${BASE}/pause.requested" \
+      "${BASE}/refine.request" "${BASE}/refine.response" "${BASE}/refine.failed" 2>/dev/null || true
 
 # Where the pipeline scripts live. Defaults to this script's own directory so
 # the pipeline runs unchanged locally, via docker compose, or in the container
@@ -264,11 +266,30 @@ if [ "$CONFIRM_BEFORE_BUILD" = "true" ]; then
   rm -f "${BASE}/confirm.approve" "${BASE}/confirm.cancel" \
         "${BASE}/confirm.option" "${BASE}/confirm.note"
   set_status AWAITING_CONFIRMATION "waiting_for_user_confirmation"
-  waited=0
-  while [ "$waited" -lt "$CONFIRM_TIMEOUT_SECONDS" ]; do
+  # Absolute wall-clock deadline (not a sleep counter): time spent inside a
+  # plan-refine AI call counts against it too, so refine rounds can't extend the
+  # gate indefinitely. A hard per-task round cap bounds AI spend on top of that.
+  CONFIRM_DEADLINE=$(( $(date +%s) + CONFIRM_TIMEOUT_SECONDS ))
+  REFINE_MAX_ROUNDS="${REFINE_MAX_ROUNDS:-10}"
+  refine_rounds=0
+  while [ "$(date +%s)" -lt "$CONFIRM_DEADLINE" ]; do
     if [ -f "${BASE}/confirm.cancel" ]; then   # cancel wins over approve
       set_status FAILED "cancelled_by_user"
       exit 4
+    fi
+    # Plan-refine request from the confirm page. Handled here — not in the
+    # gateway — because the AI CLIs and their env live with the pipeline.
+    # Best-effort: a failed refine writes refine.failed and the wait goes on.
+    if [ -s "${BASE}/refine.request" ]; then
+      if [ "$refine_rounds" -lt "$REFINE_MAX_ROUNDS" ]; then
+        refine_rounds=$((refine_rounds + 1))
+        bash "${PIPELINE_DIR}/plan-refine.sh" "$TASK_ID" || true
+      else
+        # Round budget spent: answer with failed so the UI stops polling, and
+        # drop the request so it isn't retried every iteration.
+        date -u +%FT%TZ > "${BASE}/refine.failed"
+        rm -f "${BASE}/refine.request"
+      fi
     fi
     if [ -f "${BASE}/confirm.approve" ]; then
       # Read the user's selected technology option if provided
@@ -328,7 +349,6 @@ if [ "$CONFIRM_BEFORE_BUILD" = "true" ]; then
       break
     fi
     sleep 2
-    waited=$((waited + 2))
   done
   if [ ! -f "${BASE}/confirm.approve" ]; then
     set_status FAILED "confirmation_timeout"

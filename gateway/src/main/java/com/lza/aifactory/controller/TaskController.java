@@ -164,6 +164,64 @@ public class TaskController {
         return "text/plain; charset=utf-8";
     }
 
+    /**
+     * Ask the waiting pipeline to AI-polish the user's plan draft. 202-style
+     * async: the pipeline answers via refine.response, polled by GET below.
+     */
+    @PostMapping("/refine/{taskId}")
+    public ResponseEntity<?> refine(@PathVariable String taskId, HttpServletRequest request) {
+        TaskRecord record = taskService.findStatus(taskId).orElse(null);
+        if (record == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "not_found", "message", "unknown task"));
+        }
+        if (record.status() != TaskStatus.AWAITING_CONFIRMATION) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", "conflict", "message", "這個任務不在等待確認，無法潤飾計畫"));
+        }
+        try {
+            if (!taskService.writeRefineRequest(taskId, request.getParameter("draft"))) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(Map.of("error", "already_refining", "message", "粉圓正在潤飾上一輪，稍等一下"));
+            }
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "bad_draft", "message", e.getMessage()));
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "io_error", "message", "could not record refine request"));
+        }
+        return ResponseEntity.ok(Map.of("taskId", taskId, "status", "pending"));
+    }
+
+    /** Poll the refine round: ready (with redacted text) / pending / failed / none. */
+    @GetMapping("/refine/{taskId}")
+    public ResponseEntity<?> refineStatus(@PathVariable String taskId) {
+        if (taskService.findStatus(taskId).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(taskService.refineStatus(taskId));
+    }
+
+    /**
+     * Start a follow-up task seeded from a finished local task's result
+     * ("根據成果繼續修改"). Body = the same shape as /gateway/issue.
+     */
+    @PostMapping("/continue/{taskId}")
+    public ResponseEntity<?> continueTask(@PathVariable String taskId,
+                                          @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody
+                                          com.lza.aifactory.dto.IssueDto dto) {
+        try {
+            return ResponseEntity.ok(taskService.submitContinuation(taskId, dto));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "not_continuable", "message", e.getMessage()));
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "io_error", "message", "could not seed the follow-up task"));
+        }
+    }
+
     /** Approve the plan and let the pipeline start building. */
     @PostMapping("/confirm/{taskId}")
     public ResponseEntity<?> confirm(@PathVariable String taskId, HttpServletRequest request) {
@@ -512,8 +570,11 @@ public class TaskController {
                 <div class="sumtitle">AI 幫你擬定的執行計畫草稿：</div>
                 <textarea id="planDraft" class="plan-draft" placeholder="（如果把計畫都刪光，粉圓會不知道要做什麼喔…）">%s</textarea>
                 <textarea id="planOriginal" style="display:none">%s</textarea>
-                <div class="plan-tools"><button type="button" class="reset" onclick="resetPlan()">🔄 讓粉圓重寫（還原初版）</button></div>
-                <p class="hint">💡 覺得哪裡不對、或想加點新點子？直接在上面改寫就可以囉！粉圓會照著你最後寫的內容去開工。</p>
+                <div class="plan-tools">
+                  <button type="button" class="refine" onclick="refinePlan()">✨ 請粉圓幫我潤飾</button>
+                  <button type="button" class="reset" onclick="resetPlan()">🔄 讓粉圓重寫（還原初版）</button>
+                </div>
+                <p class="hint">💡 覺得哪裡不對或想加點點子？直接改寫就行！潤飾時粉圓會保留你的原意並補齊細節，最後以你看到的內容為準開工。</p>
                 """.formatted(esc(planText), esc(planText));
             
             List<Map<String, Object>> options = taskService.readOptions(r.taskId());
@@ -589,10 +650,14 @@ public class TaskController {
                               border:1.5px dashed #d0a3c7;border-radius:10px;padding:12px 14px;
                               font:inherit;font-size:14px;line-height:1.6;color:#1f2328;background:#fffdfe;}
                   .plan-draft:focus{outline:none;border:1.5px solid #d6409f;background:#fff;}
-                  .plan-tools{margin:6px 0 2px;text-align:right;}
+                  .plan-tools{margin:6px 0 2px;text-align:right;display:flex;gap:8px;justify-content:flex-end;}
                   .plan-tools .reset{background:#fce7f3;color:#9d174d;border:0;border-radius:8px;
                                      padding:6px 12px;font-size:13px;cursor:pointer;}
                   .plan-tools .reset:hover{background:#fbcfe8;}
+                  .plan-tools .refine{background:#ddf4ff;color:#0969da;border:0;border-radius:8px;
+                                      padding:6px 12px;font-size:13px;cursor:pointer;}
+                  .plan-tools .refine:hover{background:#c6ebff;}
+                  .plan-tools .refine:disabled{opacity:.55;cursor:wait;}
                   .hint{font-size:13px;color:#656d76;margin:6px 0 0;}
                   .cost{background:#fffbeb;border:1px solid #f0d999;border-radius:10px;
                         padding:10px 14px;margin:12px 0 4px;font-size:14px;color:#1f2328;}
@@ -610,6 +675,7 @@ public class TaskController {
                   <p class="ask">按下開工後，粉圓就會照著你上面寫的計畫去做。方向不對也可以「先不做了」，補充想法後重新送出。</p>
                 </div>
                 <script>
+                  var taskId = "%s";
                   function selectOption(el){
                     document.querySelectorAll('.opt-card').forEach(function(c){ c.classList.remove('selected'); });
                     el.classList.add('selected');
@@ -621,6 +687,42 @@ public class TaskController {
                     var d = document.getElementById('planDraft');
                     var o = document.getElementById('planOriginal');
                     if(d && o){ d.value = o.value; d.focus(); }
+                  }
+                  var refining = false;
+                  function refinePlan(){
+                    if(refining) return;
+                    var d = document.getElementById('planDraft');
+                    if(!d || !d.value.trim()){ alert('計畫還是空的，先寫點什麼再請粉圓幫忙吧！'); return; }
+                    var btn = document.querySelector('.plan-tools .refine');
+                    var label = btn.textContent;
+                    function done(msg){ refining = false; btn.disabled = false; btn.textContent = label; if(msg){ alert(msg); } }
+                    refining = true; btn.disabled = true; btn.textContent = '🫧 粉圓潤飾中…';
+                    function poll(n){
+                      if(n > 60){ done('潤飾花得有點久，先用你寫的版本開工也完全沒問題！'); return; }
+                      setTimeout(function(){
+                        fetch('/gateway/refine/' + taskId)
+                          .then(function(r){ return r.json(); })
+                          .then(function(s){
+                            if(s.status === 'ready'){ d.value = s.text; d.focus(); done(); }
+                            else if(s.status === 'failed' || s.status === 'none'){ done('這次潤飾沒有成功，稍後再試一次就好。'); }
+                            else { poll(n + 1); }
+                          })
+                          .catch(function(){ poll(n + 1); });
+                      }, 2000);
+                    }
+                    var body = new URLSearchParams();
+                    body.set('draft', d.value);
+                    fetch('/gateway/refine/' + taskId, {
+                        method:'POST',
+                        headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
+                        body: body
+                      })
+                      .then(function(r){
+                        if(r.ok){ poll(0); return; }
+                        return r.json().catch(function(){ return {}; })
+                          .then(function(t){ done(t.message || '現在沒辦法潤飾，稍後再試。'); });
+                      })
+                      .catch(function(){ done('現在沒辦法潤飾，稍後再試。'); });
                   }
                   function decide(a){
                     var btns = document.querySelectorAll('.confirm-actions .btn');
@@ -635,7 +737,7 @@ public class TaskController {
                       body.set('note', note);
                     }
                     btns.forEach(function(b){ b.disabled = true; });
-                    fetch('/gateway/'+a+'/%s', {
+                    fetch('/gateway/' + a + '/' + taskId, {
                         method:'POST',
                         headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
                         body: body
@@ -677,6 +779,11 @@ public class TaskController {
                 String explainerNote = taskService.hasExplainer(r.taskId())
                         ? "<p class=\"ask\">📖 隨附一份 <b>EXPLAINER.md</b>——粉圓為你準備的白話導覽。解壓縮後請先閱讀它，了解 AI 幫你做了哪些改動！</p>"
                         : "";
+                // Iterate without re-uploading: a follow-up task seeded from this
+                // result. Only offered while the result files still exist.
+                String continueBtn = taskService.resultDir(r.taskId()).isPresent()
+                        ? "<a class=\"btn\" href=\"/?continue=" + esc(r.taskId()) + "\">🔁 根據這個成果繼續修改</a>"
+                        : "";
                 return """
                     <div class="result ok">
                       <h2>✅ 你的全新專案做好了</h2>
@@ -685,9 +792,10 @@ public class TaskController {
                       %s
                       %s
                       %s
+                      %s
                       <p class="ask">%s想保留或進一步調整，下載 zip 後交給工程師、或之後用「線上發布」功能即可。</p>
                     </div>
-                    """.formatted(summary, selection, preview, dl, explainerNote,
+                    """.formatted(summary, selection, preview, dl, continueBtn, explainerNote,
                         preview.isEmpty() ? "" : "點「線上預覽」就能直接在瀏覽器看成果。");
             }
             // Existing-repo result: a reviewable pull request.

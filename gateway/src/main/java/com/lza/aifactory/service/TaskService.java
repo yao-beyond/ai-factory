@@ -201,6 +201,75 @@ public class TaskService {
     }
 
     /**
+     * Start a follow-up task seeded from a finished local task's delivered
+     * result, so the user can iterate ("根據成果繼續修改") without re-uploading.
+     * Only completed new-project/import results may be continued — an
+     * existing-repo clone must never be copied into a local deliverable.
+     */
+    public TaskRecord submitContinuation(String prevTaskId, IssueDto dto) throws IOException {
+        String prev = normalizeTaskId(prevTaskId);
+        TaskRecord r = findStatus(prev).orElse(null);
+        if (r == null) {
+            throw new IllegalArgumentException("找不到要接續的任務");
+        }
+        if (!isNewProjectResult(prev) || r.status() != TaskStatus.COMPLETED) {
+            throw new IllegalArgumentException("只能接續「已完成」的本機專案成果");
+        }
+        Path src = resultDir(prev)
+                .orElseThrow(() -> new IllegalArgumentException("找不到上次的成果檔案（可能已被清理）"));
+        // The result root itself must be a real directory at its canonical
+        // location — not a symlink a hostile/compromised task swapped in to make
+        // the copy follow it to another task's files or outside the work dir.
+        Path expected = workDir.resolve(prev).resolve("workspace").resolve("repo").normalize();
+        try {
+            if (Files.isSymbolicLink(expected) || !src.toRealPath().equals(expected.toRealPath())) {
+                throw new IllegalArgumentException("成果路徑異常，無法接續");
+            }
+        } catch (IOException e) {
+            throw new IllegalArgumentException("找不到上次的成果檔案（可能已被清理）");
+        }
+        dto.setMode("import");
+        // A continuation never carries git/transport context from the caller.
+        dto.setRepo(null);
+        dto.setSourcePath(null);
+        return submitInternal(dto,
+                taskDir -> copyProjectTree(src, taskDir.resolve("workspace").resolve("repo")));
+    }
+
+    /**
+     * Copy the previous result into the new seed, excluding pipeline metadata
+     * (.git, .omc, docs/ai — a stale plan must not steer the new run) and
+     * skipping symlinks (a link could smuggle content from outside the result).
+     */
+    private static void copyProjectTree(Path src, Path dst) throws IOException {
+        Path realSrc = src.toRealPath();
+        Files.walkFileTree(realSrc, new java.nio.file.SimpleFileVisitor<>() {
+            @Override
+            public java.nio.file.FileVisitResult preVisitDirectory(
+                    Path dir, java.nio.file.attribute.BasicFileAttributes a) throws IOException {
+                Path rel = realSrc.relativize(dir);
+                String name = rel.getFileName() == null ? "" : rel.getFileName().toString();
+                if (name.equals(".git") || name.equals(".omc")
+                        || rel.toString().equals("docs/ai") || rel.toString().startsWith("docs/ai/")) {
+                    return java.nio.file.FileVisitResult.SKIP_SUBTREE;
+                }
+                Files.createDirectories(dst.resolve(rel.toString()));
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public java.nio.file.FileVisitResult visitFile(
+                    Path file, java.nio.file.attribute.BasicFileAttributes a) throws IOException {
+                if (Files.isSymbolicLink(file)) return java.nio.file.FileVisitResult.CONTINUE;
+                Path rel = realSrc.relativize(file);
+                Files.copy(file, dst.resolve(rel.toString()),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    /**
      * If the request came from discovery, overwrite its capabilityBoundary with the
      * authoritative one re-derived from the card library by id. A client-supplied
      * boundary is never trusted; an unknown/disabled card id clears both fields.
@@ -537,6 +606,65 @@ public class TaskService {
      */
     private static String sanitizeNote(String note) {
         return sanitizeText(note, 16384);
+    }
+
+    // --- Plan-refine marker protocol (confirm gate) ------------------------------
+    // The waiting pipeline polls refine.request, runs the AI CLI in print mode,
+    // and answers with refine.response (or refine.failed). The gateway only
+    // moves markers — the model and its env stay with the pipeline.
+
+    /**
+     * Ask the waiting pipeline to AI-polish the user's plan draft. Returns false
+     * when a refine is already in flight (one at a time). The draft is sanitised
+     * the same way as the confirm note — it is data, never instructions.
+     */
+    public boolean writeRefineRequest(String taskId, String draft) throws IOException {
+        Path dir = workDir.resolve(normalizeTaskId(taskId));
+        String clean = sanitizeText(draft, 16384);
+        if (clean.isBlank()) {
+            throw new IllegalArgumentException("計畫內容是空的，先寫點什麼再請粉圓潤飾");
+        }
+        // Clear the previous round's outputs, then CLAIM the request atomically:
+        // createFile is create-or-fail, so a second concurrent POST loses the race
+        // and gets FileAlreadyExists (-> 409) rather than overwriting. (ATOMIC_MOVE
+        // can't be used as the guard — POSIX rename silently replaces the target.)
+        // The consumer only acts on a NON-EMPTY request, so it never reads the
+        // just-claimed empty file before its body is written.
+        Files.deleteIfExists(dir.resolve("refine.response"));
+        Files.deleteIfExists(dir.resolve("refine.failed"));
+        Path target = dir.resolve("refine.request");
+        try {
+            Files.createFile(target);
+        } catch (java.nio.file.FileAlreadyExistsException e) {
+            return false;   // a refine is already in flight
+        }
+        try {
+            Files.writeString(target, clean);
+        } catch (IOException | RuntimeException e) {
+            Files.deleteIfExists(target);   // release the claim so a retry can proceed
+            throw e;
+        }
+        return true;
+    }
+
+    /**
+     * Where the refine round stands: ready (with the redacted text), pending,
+     * failed, or none. The response is AI-authored, so it goes through the same
+     * redaction as every other AI artifact before it reaches the browser.
+     */
+    public Map<String, String> refineStatus(String taskId) {
+        Path dir = workDir.resolve(normalizeTaskId(taskId));
+        Optional<String> response = readMarkdown(taskId, "refine.response");
+        if (response.isPresent()) {
+            return Map.of("status", "ready", "text", response.get());
+        }
+        if (Files.exists(dir.resolve("refine.failed"))) {
+            return Map.of("status", "failed");
+        }
+        if (Files.exists(dir.resolve("refine.request"))) {
+            return Map.of("status", "pending");
+        }
+        return Map.of("status", "none");
     }
 
     /**

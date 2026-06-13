@@ -91,13 +91,15 @@ public class WebUiController {
                 </a>
                 <div class="prefill-banner" id="prefillBanner"></div>
                 <form id="f" onsubmit="return submitForm(event)">
-                  <label>你想做什麼？</label>
-                  <div class="mode">
-                    <label><input type="radio" name="mode" value="new" checked onchange="onMode()"><span>✨ 做全新的</span></label>
-                    <label><input type="radio" name="mode" value="import" onchange="onMode()"><span>📦 改我的檔案</span></label>
-                    <label><input type="radio" name="mode" value="existing" onchange="onMode()"><span>🔧 連 git 專案</span></label>
+                  <div id="modeSection">
+                    <label>你想做什麼？</label>
+                    <div class="mode">
+                      <label><input type="radio" name="mode" value="new" checked onchange="onMode()"><span>✨ 做全新的</span></label>
+                      <label><input type="radio" name="mode" value="import" onchange="onMode()"><span>📦 改我的檔案</span></label>
+                      <label><input type="radio" name="mode" value="existing" onchange="onMode()"><span>🔧 連 git 專案</span></label>
+                    </div>
+                    <div class="hint">「做全新的」與「改我的檔案」都不需要 git 帳號或金鑰。</div>
                   </div>
-                  <div class="hint">「做全新的」與「改我的檔案」都不需要 git 帳號或金鑰。</div>
 
                   <div id="uploadRow" style="display:none">
                     <label for="file">上傳你現有的專案（.zip）</label>
@@ -187,7 +189,14 @@ public class WebUiController {
                   const maxAgents = parseInt(document.querySelector('input[name=strength]:checked').value, 10);
                   try{
                     let r;
-                    if(mode === 'import'){
+                    if(window.__continueFrom){
+                      // Follow-up on a finished local result: the server seeds the
+                      // new task from that result; no upload, no git needed.
+                      r = await fetch('/gateway/continue/' + encodeURIComponent(window.__continueFrom), {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({ source:"web", title, description, maxAgents, projectType })
+                      });
+                    } else if(mode === 'import'){
                       const f = document.getElementById('file').files[0];
                       if(!f){ throw new Error('請先選擇一個 .zip 檔'); }
                       const fd = new FormData();
@@ -207,6 +216,21 @@ public class WebUiController {
                     window.location.href = '/gateway/ui/' + encodeURIComponent(rec.taskId);
                   }catch(ex){ err.textContent = '送出失敗：' + ex.message; err.style.display='block'; }
                 }
+                // Continuation entry (/?continue=<taskId> from a completed task's
+                // page): lock the form to follow-up mode and tell the user why.
+                (function(){
+                  try{
+                    var c = new URLSearchParams(location.search).get('continue');
+                    if(!c){ return; }
+                    window.__continueFrom = c;
+                    var ms = document.getElementById('modeSection');
+                    if(ms){ ms.style.display = 'none'; }
+                    var up = document.getElementById('uploadRow');
+                    if(up){ up.style.display = 'none'; }
+                    var b = document.getElementById('prefillBanner');
+                    if(b){ b.textContent = '🔁 接續上次的成果繼續修改——描述你想改什麼，粉圓會直接在原本的專案上動工！'; b.style.display='block'; }
+                  }catch(e){}
+                })();
                 // Prefill from a discovery session (set in sessionStorage by /gateway/discovery).
                 (function(){
                   try{
@@ -359,11 +383,20 @@ public class WebUiController {
                   document.getElementById('finalWrap').classList.add('hidden');
                   document.getElementById('goBtn').disabled = true;
                 }
+                function chipLabel(group){
+                  var s = group.querySelector('.chip.sel');
+                  return s ? s.textContent : '';
+                }
                 function maybeLoadCards(){
                   if(!state.audience || !state.intent){ return; }
                   resetDownstream();
                   var showCollectNote = (state.audience === 'customers' && state.intent === 'collect');
                   document.getElementById('collectNote').classList.toggle('hidden', !showCollectNote);
+                  // Honest "why these cards": the library really is filtered by
+                  // exactly this audience x intent pair — say so, plainly.
+                  document.getElementById('cardsTitle').textContent =
+                    '因為這是「' + chipLabel(qA) + '」、重點是「' + chipLabel(qI)
+                    + '」——粉圓從點子庫挑出這幾張最對味的，看看哪個接近你想的？';
                   fetch('/gateway/discovery/cards?audience=' + encodeURIComponent(state.audience)
                         + '&intent=' + encodeURIComponent(state.intent))
                     .then(function(r){ return r.json(); })

@@ -12,6 +12,7 @@ test:
 # Behavior tests for the pipeline shell scripts (containment/fallback paths).
 test-scripts:
 	bash scripts/tests/explainer-test.sh
+	bash scripts/tests/plan-refine-test.sh
 
 # Run tests + produce the JaCoCo coverage report.
 coverage:

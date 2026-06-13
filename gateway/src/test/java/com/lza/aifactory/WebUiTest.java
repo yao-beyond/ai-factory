@@ -1017,6 +1017,209 @@ class WebUiTest {
     }
 
     @Test
+    void confirmPageHasRefinePlanButton() throws Exception {
+        putAwaitingTask("UAT-REF-BTN", true);
+        mvc.perform(get("/gateway/ui/UAT-REF-BTN"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("請粉圓幫我潤飾")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("refinePlan")));
+    }
+
+    @Test
+    void refineWritesSanitizedRequestMarker() throws Exception {
+        putAwaitingTask("UAT-REF", true);
+        // The work dir persists across JVM runs — clear leftover refine markers
+        // so the "one at a time" half of this test stays idempotent.
+        for (String f : new String[]{"refine.request", "refine.response", "refine.failed"}) {
+            java.nio.file.Files.deleteIfExists(workDir().resolve("UAT-REF").resolve(f));
+        }
+        mvc.perform(post("/gateway/refine/UAT-REF")
+                        .param("draft", "做個藍色按鈕" + ((char) 1) + "！"))
+                .andExpect(status().isOk());
+        java.nio.file.Path req = workDir().resolve("UAT-REF").resolve("refine.request");
+        org.junit.jupiter.api.Assertions.assertTrue(java.nio.file.Files.exists(req));
+        String saved = java.nio.file.Files.readString(req);
+        org.junit.jupiter.api.Assertions.assertTrue(saved.contains("藍色按鈕"));
+        org.junit.jupiter.api.Assertions.assertFalse(saved.contains(String.valueOf((char) 1)));
+        // While the request is pending, polling reports pending.
+        mvc.perform(get("/gateway/refine/UAT-REF"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("pending")));
+        // One refine at a time: a second request while busy is rejected.
+        mvc.perform(post("/gateway/refine/UAT-REF").param("draft", "再來一次"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void refineResponseIsServedRedacted() throws Exception {
+        putAwaitingTask("UAT-REF-RES", true);
+        java.nio.file.Path dir = workDir().resolve("UAT-REF-RES");
+        java.nio.file.Files.writeString(dir.resolve("refine.response"),
+                "## 目標\n- 改藍色\n- leaked GITHUB_TOKEN=ghp_0123456789abcdef0123456789abcdef\n");
+        String json = mvc.perform(get("/gateway/refine/UAT-REF-RES"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse()
+                .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("ready"));
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("改藍色"));
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("ghp_0123456789abcdef"));
+    }
+
+    @Test
+    void refineFailedRoundIsReported() throws Exception {
+        putAwaitingTask("UAT-REF-FAIL", true);
+        java.nio.file.Files.writeString(
+                workDir().resolve("UAT-REF-FAIL").resolve("refine.failed"), "now");
+        mvc.perform(get("/gateway/refine/UAT-REF-FAIL"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("failed")));
+    }
+
+    @Test
+    void refineRejectedWhenNotAwaitingOrEmpty() throws Exception {
+        // SUBMITTED task (noop pipeline): not at the confirm gate.
+        String body = """
+                {"source":"web","externalId":"UAT-REF-NO","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        mvc.perform(post("/gateway/refine/UAT-REF-NO").param("draft", "x"))
+                .andExpect(status().isConflict());
+        // Awaiting but a blank draft: 400, nothing to polish.
+        putAwaitingTask("UAT-REF-EMPTY", true);
+        mvc.perform(post("/gateway/refine/UAT-REF-EMPTY").param("draft", "  \t "))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void continueSeedsFollowUpTaskFromCompletedLocalResult() throws Exception {
+        // A completed new-project task with a delivered result tree.
+        String prev = """
+                {"source":"web","mode":"new","externalId":"UAT-PREV","title":"記帳網頁","description":"做一個","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(prev))
+                .andExpect(status().isOk());
+        java.nio.file.Path prevDir = workDir().resolve("UAT-PREV");
+        java.nio.file.Path repo = prevDir.resolve("workspace").resolve("repo");
+        java.nio.file.Files.createDirectories(repo.resolve(".git"));
+        java.nio.file.Files.createDirectories(repo.resolve("docs").resolve("ai"));
+        java.nio.file.Files.createDirectories(repo.resolve(".omc"));
+        java.nio.file.Files.writeString(repo.resolve("index.html"), "<html>v1</html>");
+        java.nio.file.Files.writeString(repo.resolve(".git").resolve("config"), "[core]");
+        java.nio.file.Files.writeString(repo.resolve("docs").resolve("ai").resolve("PLAN.md"), "stale plan");
+        java.nio.file.Files.writeString(repo.resolve(".omc").resolve("state"), "x");
+        java.nio.file.Files.writeString(prevDir.resolve("status.txt"),
+                "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=now\n");
+
+        String json = mvc.perform(post("/gateway/continue/UAT-PREV")
+                        .contentType("application/json")
+                        .content("{\"source\":\"web\",\"title\":\"改標題\",\"description\":\"標題改藍色\",\"maxAgents\":1}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String newId = com.jayway.jsonpath.JsonPath.read(json, "$.taskId");
+        org.junit.jupiter.api.Assertions.assertNotEquals("UAT-PREV", newId);
+
+        java.nio.file.Path seeded = workDir().resolve(newId).resolve("workspace").resolve("repo");
+        // The result files came over; pipeline metadata did not.
+        org.junit.jupiter.api.Assertions.assertTrue(
+                java.nio.file.Files.exists(seeded.resolve("index.html")));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                java.nio.file.Files.exists(seeded.resolve(".git")));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                java.nio.file.Files.exists(seeded.resolve("docs").resolve("ai")));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                java.nio.file.Files.exists(seeded.resolve(".omc")));
+        // The follow-up runs as a local import task.
+        String issue = java.nio.file.Files.readString(workDir().resolve(newId).resolve("issue.json"));
+        org.junit.jupiter.api.Assertions.assertTrue(issue.contains("\"mode\" : \"import\""));
+    }
+
+    @Test
+    void continueRejectsSymlinkedResultRoot() throws Exception {
+        // A completed local task whose workspace/repo is a SYMLINK (swapped in to
+        // point at another task's files or outside the work dir) must not seed a
+        // continuation — the copy would follow the link.
+        String body = """
+                {"source":"web","mode":"new","externalId":"UAT-SYM-PREV","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Path dir = workDir().resolve("UAT-SYM-PREV");
+        java.nio.file.Path workspace = dir.resolve("workspace");
+        java.nio.file.Files.createDirectories(workspace);
+        // A secret tree elsewhere that the symlinked repo points at.
+        java.nio.file.Path elsewhere = workDir().resolve("UAT-SYM-SECRET");
+        java.nio.file.Files.createDirectories(elsewhere);
+        java.nio.file.Files.writeString(elsewhere.resolve("secret.txt"), "TOP SECRET");
+        try {
+            java.nio.file.Files.createSymbolicLink(workspace.resolve("repo"), elsewhere);
+        } catch (Exception e) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "symlinks unsupported here");
+        }
+        java.nio.file.Files.writeString(dir.resolve("status.txt"),
+                "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=now\n");
+        mvc.perform(post("/gateway/continue/UAT-SYM-PREV")
+                        .contentType("application/json")
+                        .content("{\"source\":\"web\",\"title\":\"x\",\"description\":\"y\",\"maxAgents\":1}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void continueRejectedForExistingRepoOrUnfinishedTask() throws Exception {
+        // Existing-repo task: its clone must never seed a local deliverable.
+        java.nio.file.Path dir = workDir().resolve("UAT-PREV-REPO");
+        java.nio.file.Files.createDirectories(dir.resolve("workspace").resolve("repo"));
+        java.nio.file.Files.writeString(dir.resolve("issue.json"),
+                "{\"source\":\"web\",\"title\":\"t\",\"description\":\"d\",\"mode\":\"existing\"}");
+        java.nio.file.Files.writeString(dir.resolve("status.txt"),
+                "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=now\n");
+        // Not in the in-memory list -> 400/404 family; submit one properly instead.
+        String body = """
+                {"source":"web","externalId":"UAT-PREV-RUN","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        // Still SUBMITTED — not continuable yet.
+        mvc.perform(post("/gateway/continue/UAT-PREV-RUN")
+                        .contentType("application/json")
+                        .content("{\"source\":\"web\",\"title\":\"x\",\"description\":\"y\",\"maxAgents\":1}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void completedLocalPageOffersContinueButton() throws Exception {
+        String body = """
+                {"source":"web","mode":"new","externalId":"UAT-CONT-BTN","title":"t","description":"d","maxAgents":1}
+                """;
+        mvc.perform(post("/gateway/issue").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        java.nio.file.Path dir = workDir().resolve("UAT-CONT-BTN");
+        java.nio.file.Files.createDirectories(dir.resolve("workspace").resolve("repo"));
+        java.nio.file.Files.writeString(dir.resolve("status.txt"),
+                "STATUS=COMPLETED\nMESSAGE=done\nUPDATED_AT=now\n");
+        mvc.perform(get("/gateway/ui/UAT-CONT-BTN"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("根據這個成果繼續修改")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("/?continue=UAT-CONT-BTN")));
+    }
+
+    @Test
+    void homeSupportsContinueEntry() throws Exception {
+        mvc.perform(get("/"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("__continueFrom")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("/gateway/continue/")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"modeSection\"")));
+    }
+
+    @Test
+    void discoveryPageExplainsWhyCardsWereChosen() throws Exception {
+        mvc.perform(get("/gateway/discovery"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("粉圓從點子庫挑出這幾張最對味的")));
+    }
+
+    @Test
     void confirmWritesApproveMarkerWhenAwaiting() throws Exception {
         putAwaitingTask("UAT-OK", false);
         mvc.perform(post("/gateway/confirm/UAT-OK")).andExpect(status().isOk());
