@@ -14,6 +14,8 @@
 - **需 sandbox 才真（Phase 3+，CDP 回 `ALLOWED_UNENFORCED`，UI/docs 明示「政策聲明但本階段未強制」）**：執行層——禁 prod secrets、禁網路 egress、禁寫保護路徑外。需 container/seccomp/egress proxy。
 - **本質只能偵測（永不宣稱可阻止）**：模型語意層——「不准寫出隱晦不安全的程式」「不准串通」。靠隔離＋獨立審查＋掃描降低風險。
 
+**人類核准端點的認證邊界（誠實標明）**：`approve` / `reject` / `override` / `promote-check`（operator 路徑）一律要求 operator 密鑰，**fail-closed**——未設 `AIF_INTERNAL_SECRET` 時 gateway 啟動會生成 ephemeral 密鑰、只印到 gateway console（不落地、不進 pipeline 環境）。因 `AIF_GATEWAY_URL` 會被 pipeline 子程序繼承，這道驗證是防止 workspace 內不可信程式（AI agent、專案測試）自我核准的關鍵；少了它就等於閘門 fail-open。**殘留風險**：在無真實 sandbox（Phase 3）下，若操作者把 gateway stdout 導向 workspace 可讀的檔（如 `nohup > /tmp/...`），生成的密鑰仍可能被同主機的 task 程式讀走。最穩做法是明設 `AIF_INTERNAL_SECRET`（留在 operator 環境、永不進 pipeline）；ephemeral + console 只是免設定的 fallback。
+
 ## 1. 範圍（Phase 1 做什麼 / 不做什麼）
 
 做：

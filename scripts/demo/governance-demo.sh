@@ -9,6 +9,13 @@ set -uo pipefail
 # Prereq: a running gateway. Set GW to its base URL (default tries 8081 then 8080).
 # Usage: bash scripts/demo/governance-demo.sh
 #
+# Auth: promote-check / approve now always require the operator secret (the gate
+# no longer fails open). If you started the gateway with AIF_INTERNAL_SECRET, run
+# this demo with the same value in the env. Otherwise the gateway generated an
+# ephemeral secret and logged it; this script greps it from the gateway log
+# (AIF_GATEWAY_LOG, default /tmp/gateway-8081.log). Set AIF_GATEWAY_LOG if your
+# gateway logs elsewhere, or export AIF_INTERNAL_SECRET to skip the log lookup.
+#
 # Flow:
 #   1. submit a task under the critical "compliance-patcher" profile
 #   2. promote-check with failing tests  -> BLOCKED (Safe Catch)
@@ -26,8 +33,22 @@ pick_gw() {
 [ -n "$GW" ] || GW="$(pick_gw)" || { echo "找不到運行中的 gateway（請設定 GW=http://host:port）" >&2; exit 1; }
 echo "▶ gateway: $GW"
 
-SEC_HDR=()
-[ -n "${AIF_INTERNAL_SECRET:-}" ] && SEC_HDR=(-H "X-AIF-Internal: ${AIF_INTERNAL_SECRET}")
+# Obtain the operator secret: explicit env wins; otherwise recover the ephemeral
+# one the gateway logged at startup (workspace code can't read this console, but
+# an operator on the same host can).
+SECRET="${AIF_INTERNAL_SECRET:-}"
+if [ -z "$SECRET" ]; then
+  GW_LOG="${AIF_GATEWAY_LOG:-/tmp/gateway-8081.log}"
+  if [ -f "$GW_LOG" ]; then
+    SECRET="$(grep -oE 'ephemeral-approval-secret [0-9a-f]+' "$GW_LOG" 2>/dev/null | tail -1 | awk '{print $2}')"
+  fi
+fi
+if [ -z "$SECRET" ]; then
+  echo "找不到 operator 密鑰：請以 AIF_INTERNAL_SECRET=... 啟動 gateway 並用同值跑此 demo，" >&2
+  echo "或設 AIF_GATEWAY_LOG 指向 gateway 日誌（內含啟動時生成的 ephemeral 密鑰）。" >&2
+  exit 1
+fi
+SEC_HDR=(-H "X-AIF-Internal: ${SECRET}")
 
 TASK="DEMO-$(date +%s)"
 jqr() { if command -v jq >/dev/null 2>&1; then jq -r "$1"; else cat; fi; }

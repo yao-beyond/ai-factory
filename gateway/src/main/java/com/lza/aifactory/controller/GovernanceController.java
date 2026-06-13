@@ -37,6 +37,8 @@ import java.util.Map;
 @RequestMapping("/gateway/governance")
 public class GovernanceController {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GovernanceController.class);
+
     private final GovernanceProfileLibrary profileLibrary;
     private final GovernanceEventLog eventLog;
     private final EvidenceService evidenceService;
@@ -58,7 +60,37 @@ public class GovernanceController {
         this.promotionService = promotionService;
         this.taskService = taskService;
         this.governanceTokens = governanceTokens;
-        this.internalSecret = internalSecret == null ? "" : internalSecret;
+        String configured = internalSecret == null ? "" : internalSecret;
+        if (configured.isBlank()) {
+            // Fail-closed by default. With no operator secret the human-approval
+            // endpoints would otherwise accept ANY caller — and untrusted workspace
+            // code inherits AIF_GATEWAY_URL (see BashPipelineExecutor), so it could
+            // POST /approve and self-clear the very gate that is meant to hold for a
+            // human. Generate an ephemeral secret, held only in this process's
+            // memory, and surface it ONCE on the gateway console: an operator can
+            // read the console; a separate workspace process cannot read it.
+            this.internalSecret = randomSecret();
+            log.warn("""
+                    [governance] AIF_INTERNAL_SECRET is not set — generated an ephemeral \
+                    human-approval secret for this gateway run:
+                        ephemeral-approval-secret {}
+                      Send it as the X-AIF-Internal header (the dashboard prompts for it). A \
+                    separate workspace/pipeline process cannot read this console.
+                      Prefer setting AIF_INTERNAL_SECRET in the gateway environment for a \
+                    stable secret that is also kept OUT of any file you redirect stdout to \
+                    (a redirected log readable by task code would leak this value).""",
+                    this.internalSecret);
+        } else {
+            this.internalSecret = configured;
+        }
+    }
+
+    private static String randomSecret() {
+        byte[] r = new byte[24];
+        new java.security.SecureRandom().nextBytes(r);
+        StringBuilder sb = new StringBuilder();
+        for (byte b : r) sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+        return sb.toString();
     }
 
     /** Display-safe profile list for the picker (no capability internals). */
@@ -120,8 +152,9 @@ public class GovernanceController {
         String id = taskService.normalizeTaskId(taskId);
         // The pipeline authenticates with its scoped per-task promote token (it does
         // NOT hold the operator secret); an operator/curl may also use the secret.
-        if (!internalSecret.isBlank()
-                && !internalSecret.equals(request.getHeader("X-AIF-Internal"))
+        // The secret is always present (auto-generated when unset), so this never
+        // falls open to an unauthenticated caller.
+        if (!secretMatches(request)
                 && !governanceTokens.isValid(id, "promote-check", request.getHeader("X-AIF-Promote-Token"))) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "forbidden", "message", "missing/invalid promote-check authorization"));
@@ -191,13 +224,24 @@ public class GovernanceController {
         return ResponseEntity.ok(Map.of("taskId", id, "decision", approve ? "approved" : "rejected"));
     }
 
-    /** A configured internal secret gates the machine-to-machine promote-check. */
+    /**
+     * Gate the human-approval endpoints. {@code internalSecret} is never blank (it
+     * is auto-generated when unset, see constructor), so this ALWAYS enforces and
+     * never falls open to unauthenticated workspace code.
+     */
     private ResponseEntity<?> requireInternalSecret(HttpServletRequest request) {
-        if (internalSecret.isBlank()) return null; // not configured -> trusted-network posture
-        String got = request.getHeader("X-AIF-Internal");
-        if (internalSecret.equals(got)) return null;
+        if (secretMatches(request)) return null;
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(Map.of("error", "forbidden", "message", "missing/invalid internal secret"));
+    }
+
+    /** Constant-time check that the request carries the operator secret. */
+    private boolean secretMatches(HttpServletRequest request) {
+        String got = request.getHeader("X-AIF-Internal");
+        if (got == null) return false;
+        return java.security.MessageDigest.isEqual(
+                got.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                internalSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     /** Best-effort actor label for the audit trail (no user system yet). */

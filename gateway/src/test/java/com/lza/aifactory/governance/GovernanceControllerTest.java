@@ -16,9 +16,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {
         "ai-factory.work-dir=${java.io.tmpdir}/ai-factory-governance-test",
-        "ai-factory.pipeline-script=${user.dir}/src/test/resources/noop-pipeline.sh"
+        "ai-factory.pipeline-script=${user.dir}/src/test/resources/noop-pipeline.sh",
+        "AIF_INTERNAL_SECRET=ctrl-test-secret"
 })
 class GovernanceControllerTest {
+
+    private static final String SECRET = "ctrl-test-secret";
 
     @Autowired
     private MockMvc mvc;
@@ -96,11 +99,13 @@ class GovernanceControllerTest {
                 .andExpect(status().isOk());
         // standard-app + tests passed -> eligible.
         mvc.perform(post("/gateway/governance/GOV-PC/promote-check").contentType("application/json")
+                        .header("X-AIF-Internal", SECRET)
                         .content("{\"testStatus\":\"pass\",\"diffRef\":\"ai/x/final\",\"mode\":\"local\"}"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("DELIVERABLE_ELIGIBLE")));
         // tests failed -> blocked.
         mvc.perform(post("/gateway/governance/GOV-PC/promote-check").contentType("application/json")
+                        .header("X-AIF-Internal", SECRET)
                         .content("{\"testStatus\":\"fail\",\"diffRef\":\"ai/x/final\",\"mode\":\"local\"}"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("BLOCKED")))
@@ -110,6 +115,7 @@ class GovernanceControllerTest {
     @Test
     void promoteCheckUnknownTaskIs404() throws Exception {
         mvc.perform(post("/gateway/governance/__none__/promote-check").contentType("application/json")
+                        .header("X-AIF-Internal", SECRET)
                         .content("{\"testStatus\":\"pass\"}"))
                 .andExpect(status().isNotFound());
     }
@@ -120,7 +126,8 @@ class GovernanceControllerTest {
                 {"source":"web","mode":"new","externalId":"GOV-APR","title":"t","description":"d","maxAgents":1}
                 """))
                 .andExpect(status().isOk());
-        mvc.perform(post("/gateway/governance/GOV-APR/approve")).andExpect(status().isOk());
+        mvc.perform(post("/gateway/governance/GOV-APR/approve").header("X-AIF-Internal", SECRET))
+                .andExpect(status().isOk());
         org.junit.jupiter.api.Assertions.assertTrue(
                 java.nio.file.Files.exists(workDir().resolve("GOV-APR").resolve("governance.approve")));
     }
@@ -132,10 +139,11 @@ class GovernanceControllerTest {
                 """))
                 .andExpect(status().isOk());
         // Missing fields -> 400.
-        mvc.perform(post("/gateway/governance/GOV-OVR/override").param("rationale", "x"))
+        mvc.perform(post("/gateway/governance/GOV-OVR/override").header("X-AIF-Internal", SECRET)
+                        .param("rationale", "x"))
                 .andExpect(status().isBadRequest());
         // Complete -> recorded.
-        mvc.perform(post("/gateway/governance/GOV-OVR/override")
+        mvc.perform(post("/gateway/governance/GOV-OVR/override").header("X-AIF-Internal", SECRET)
                         .param("rationale", "緊急").param("ticket", "INC-9").param("expiry", "2026-06-14T00:00:00Z"))
                 .andExpect(status().isOk());
         org.junit.jupiter.api.Assertions.assertTrue(

@@ -5,7 +5,6 @@ import com.lza.aifactory.governance.GovernanceDashboardService.DashboardData;
 import com.lza.aifactory.governance.GovernanceDashboardService.Incident;
 import com.lza.aifactory.governance.GovernanceDashboardService.OverrideEntry;
 import com.lza.aifactory.governance.GovernanceDashboardService.PendingApproval;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,12 +26,14 @@ public class GovernanceDashboardController {
     // Whether an internal secret gates the human approve/reject endpoints. We
     // expose only this BOOLEAN to the page (never the secret) so the one-click
     // buttons know to ask the operator for the secret instead of silently 403ing.
+    // Always true now: the controller enforces an operator secret on approve/
+    // reject/override unconditionally (auto-generated when AIF_INTERNAL_SECRET is
+    // unset), so the page must always prompt for it.
     private final boolean secretRequired;
 
-    public GovernanceDashboardController(GovernanceDashboardService dashboard,
-                                         @Value("${AIF_INTERNAL_SECRET:}") String internalSecret) {
+    public GovernanceDashboardController(GovernanceDashboardService dashboard) {
         this.dashboard = dashboard;
-        this.secretRequired = internalSecret != null && !internalSecret.isBlank();
+        this.secretRequired = true;
     }
 
     @GetMapping(value = "/gateway/governance/dashboard", produces = MediaType.TEXT_HTML_VALUE)
