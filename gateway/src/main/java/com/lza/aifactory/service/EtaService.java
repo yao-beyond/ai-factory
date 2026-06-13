@@ -66,6 +66,7 @@ public class EtaService {
         // decision, or while paused — "remaining" is meaningless in all of these.
         if (record.terminal()
                 || s == TaskStatus.AWAITING_CONFIRMATION
+                || s == TaskStatus.AWAITING_DELIVERY_APPROVAL
                 || s == TaskStatus.PAUSED) return Optional.empty();
         int progress = Math.max(0, Math.min(100, s.progress()));
         long remaining = averageTotalMillis() * (100 - progress) / 100;

@@ -18,11 +18,16 @@ class BashPipelineExecutorEnvTest {
         env.put("SOURCE_PATH", "/etc");
         env.put("PROJECT_MODE", "local");
         env.put("PATH", "/usr/bin");
+        // The operator approval secret must never reach the pipeline (untrusted AI
+        // agents / project tests would inherit it and could self-approve).
+        env.put("AIF_INTERNAL_SECRET", "operator-key");
 
         BashPipelineExecutor.applyEnv(env, "TASK-1", Map.of()); // request sets neither
 
         assertFalse(env.containsKey("SOURCE_PATH"), "inherited SOURCE_PATH must be stripped");
         assertFalse(env.containsKey("PROJECT_MODE"), "inherited PROJECT_MODE must be stripped");
+        assertFalse(env.containsKey("AIF_INTERNAL_SECRET"),
+                "operator secret must never reach the pipeline env");
         assertEquals("TASK-1", env.get("TASK_ID"));
         assertEquals("/usr/bin", env.get("PATH"));
     }

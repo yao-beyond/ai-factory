@@ -38,6 +38,11 @@ public class IssueDto {
     // Server-derived structured capability boundary (written to issue.json). Any
     // value sent by the client is ignored and overwritten from the card library.
     private Map<String, Object> capabilityBoundary;
+    // Governance profile that governs this task's change-control (capability grants,
+    // gates, independence). Resolved server-side against the profile library; an
+    // unknown id is rejected. Default keeps existing behaviour (standard-app).
+    @Size(max = 128)
+    private String governanceProfileId = "standard-app";
 
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }
@@ -67,4 +72,6 @@ public class IssueDto {
     public void setDiscoveryCardId(String discoveryCardId) { this.discoveryCardId = discoveryCardId; }
     public Map<String, Object> getCapabilityBoundary() { return capabilityBoundary; }
     public void setCapabilityBoundary(Map<String, Object> capabilityBoundary) { this.capabilityBoundary = capabilityBoundary; }
+    public String getGovernanceProfileId() { return governanceProfileId; }
+    public void setGovernanceProfileId(String governanceProfileId) { this.governanceProfileId = governanceProfileId; }
 }

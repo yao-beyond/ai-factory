@@ -13,9 +13,15 @@ STATUS_FILE="${BASE}/status.txt"
 
 # Clear stale control markers from a previous run of this id, so a fresh run
 # isn't immediately paused/cancelled by a leftover marker (and a stale refine
-# round can't answer a new one).
+# round can't answer a new one). Governance approval/override markers are cleared
+# too — a prior run's approval must NEVER carry over to a new run.
 rm -f "${BASE}/abort.requested" "${BASE}/pause.requested" \
-      "${BASE}/refine.request" "${BASE}/refine.response" "${BASE}/refine.failed" 2>/dev/null || true
+      "${BASE}/refine.request" "${BASE}/refine.response" "${BASE}/refine.failed" \
+      "${BASE}/governance.approve" "${BASE}/governance.reject" "${BASE}/governance.override" \
+      2>/dev/null || true
+# The per-run governance nonce that invalidates a previous run's approval is owned
+# by the GATEWAY in memory (rotated when it launches this pipeline) — not a file
+# here, so untrusted workspace code can't read or rotate it to revive an approval.
 
 # Where the pipeline scripts live. Defaults to this script's own directory so
 # the pipeline runs unchanged locally, via docker compose, or in the container
@@ -61,6 +67,22 @@ fi
 # Fallback so a missing lib never breaks plain (e.g. public / local) git ops.
 declare -F aif_git >/dev/null 2>&1 || aif_git() { git "$@"; }
 
+# Keep AI-tooling state (OMC/Claude/Codex working dirs created by the dev agents
+# running inside the workspace) OUT of git: never committed into candidate/base
+# branches, so the deliverable stays clean AND `select` can't abort on an
+# untracked .omc/ colliding with a tracked one. Must run AFTER `git init`/clone
+# but BEFORE any `git add` (including the import commit). Writes the shared
+# git-common-dir info/exclude (honored by every dev worktree); never committed.
+aif_exclude_tooling() {
+  git rev-parse --git-dir >/dev/null 2>&1 || return 0
+  local ex; ex="$(git rev-parse --git-common-dir 2>/dev/null)/info/exclude"
+  mkdir -p "$(dirname "$ex")" 2>/dev/null || true
+  local pat
+  for pat in '.omc/' '.claude/' '.codex/'; do
+    grep -qxF "$pat" "$ex" 2>/dev/null || echo "$pat" >> "$ex"
+  done
+}
+
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
 MAX_AGENTS="${MAX_AGENTS:-3}"
 # Clamp to a sane range so a bad issue.json/env value can't spawn a runaway
@@ -104,6 +126,9 @@ export REPO_URL="${REPO_URL:-}"
 # through every subsequent status write so the gateway/UI can surface the link.
 PR_URL=""
 RESULT_ZIP=""
+# Governance promote-check runs once, after all deliverable mutations and before
+# the deliverable crosses the trust boundary (zip / COMPLETED).
+GOVERNANCE_GATE_DONE=false
 # Hard abort: write CANCELLED and stop. Called at every checkpoint so a pipeline
 # the gateway no longer owns (e.g. an orphan after a restart, which an in-process
 # kill can't reach) still self-terminates instead of running to completion.
@@ -154,6 +179,59 @@ set_status() {
 
 trap 'set_status FAILED "stage:${STAGE:-unknown} rc:$?"' ERR
 
+# Governance gate: ask the gateway whether this change may become a deliverable.
+# OPT-IN — only enforced when the gateway told us where it is (AIF_GATEWAY_URL);
+# left unset, the gate is skipped so ungoverned deployments behave as before.
+# Fail-closed: a missing/unhappy gateway blocks promotion rather than shipping
+# unreviewed work. Runs once (guarded), after every deliverable mutation.
+governance_gate() {
+  [ "$GOVERNANCE_GATE_DONE" = true ] && return 0
+  GOVERNANCE_GATE_DONE=true
+  [ -n "${AIF_GATEWAY_URL:-}" ] || return 0
+  if ! command -v curl >/dev/null 2>&1; then
+    set_status FAILED "promotion_blocked:no_curl"; exit 7
+  fi
+  local mode review_ref body http resp body_json state gate deadline
+  if [ "$LOCAL_MODE" = true ]; then mode="local"; else mode="existing"; fi
+  review_ref=""
+  [ -f docs/ai/CODEX_REVIEW.md ] && review_ref="docs/ai/CODEX_REVIEW.md"
+  body="$(printf '{"testStatus":"%s","reviewReportRef":"%s","diffRef":"ai/%s/final","mode":"%s"}' \
+    "${TEST_STATUS:-unknown}" "$review_ref" "$TASK_ID" "$mode")"
+  deadline=$(( $(date +%s) + ${GOVERNANCE_APPROVAL_TIMEOUT_SECONDS:-1800} ))
+  while :; do
+    [ -f "${BASE}/abort.requested" ] && { _write_cancelled; exit 4; }
+    resp="$(curl -sS -m 30 -X POST -H 'Content-Type: application/json' \
+      ${AIF_PROMOTE_TOKEN:+-H "X-AIF-Promote-Token: ${AIF_PROMOTE_TOKEN}"} \
+      --data "$body" \
+      "${AIF_GATEWAY_URL%/}/gateway/governance/${TASK_ID}/promote-check" \
+      -w $'\n%{http_code}' 2>/dev/null)" || { set_status FAILED "promotion_blocked:gateway_unreachable"; exit 7; }
+    http="$(printf '%s' "$resp" | tail -n1)"
+    body_json="$(printf '%s' "$resp" | sed '$d')"
+    [ "$http" = "200" ] || { set_status FAILED "promotion_blocked:gateway_http_${http}"; exit 7; }
+    if command -v jq >/dev/null 2>&1; then
+      state="$(printf '%s' "$body_json" | jq -r '.state // "BLOCKED"')"
+      gate="$(printf '%s' "$body_json" | jq -r '.blockingGate // ""')"
+    else
+      case "$body_json" in
+        *DELIVERABLE_ELIGIBLE*) state=DELIVERABLE_ELIGIBLE ;;
+        *HUMAN_APPROVAL_PENDING*) state=HUMAN_APPROVAL_PENDING ;;
+        *) state=BLOCKED ;;
+      esac
+      gate=""
+    fi
+    case "$state" in
+      DELIVERABLE_ELIGIBLE) return 0 ;;
+      BLOCKED) set_status FAILED "promotion_blocked:${gate:-gate}"; exit 7 ;;
+      HUMAN_APPROVAL_PENDING)
+        set_status AWAITING_DELIVERY_APPROVAL "awaiting_human_delivery_approval"
+        [ "$(date +%s)" -ge "$deadline" ] && { set_status FAILED "promotion_blocked:approval_timeout"; exit 7; }
+        sleep 3
+        ;;
+      *) set_status FAILED "promotion_blocked:unknown_state"; exit 7 ;;
+    esac
+  done
+}
+
 # Auto-detect the AI CLIs (searching PATH + common install dirs). The Claude Code
 # CLI is `claude`; we also accept the older `claude-code` name. If a required CLI
 # is missing, fail early with a plain install hint instead of producing fake output.
@@ -189,8 +267,11 @@ if [ "$LOCAL_MODE" = true ]; then
   if [ -n "${SOURCE_PATH:-}" ] && [ -d "$SOURCE_PATH" ]; then
     set_status RUNNING "importing your project"
     mkdir -p repo
-    # Copy the folder's contents (never its .git) into repo.
-    ( cd "$SOURCE_PATH" && tar --exclude='./.git' --exclude='./.git/*' -cf - . ) | ( cd repo && tar -xf - )
+    # Copy the folder's contents into repo, excluding VCS + AI-tooling state.
+    ( cd "$SOURCE_PATH" && tar --exclude='./.git' --exclude='./.git/*' \
+        --exclude='./.omc' --exclude='./.omc/*' \
+        --exclude='./.claude' --exclude='./.claude/*' \
+        --exclude='./.codex' --exclude='./.codex/*' -cf - . ) | ( cd repo && tar -xf - )
   fi
   if [ -d repo ] && find repo -mindepth 1 -not -path 'repo/.git*' -print -quit 2>/dev/null | grep -q .; then
     # Seeded (import): commit the existing files as the base.
@@ -198,6 +279,7 @@ if [ "$LOCAL_MODE" = true ]; then
     cd repo
     [ -d .git ] || git init -b "$TARGET_BRANCH" >/dev/null
     git config user.email "ai-factory@localhost"; git config user.name "AI Factory"
+    aif_exclude_tooling   # BEFORE the import add: a .omc/ inside the uploaded project must not be committed
     git add -A
     git commit -q -m "chore: import existing project" >/dev/null 2>&1 || \
       git commit -q --allow-empty -m "chore: import existing project" >/dev/null 2>&1 || true
@@ -207,6 +289,7 @@ if [ "$LOCAL_MODE" = true ]; then
     mkdir -p repo; cd repo
     [ -d .git ] || git init -b "$TARGET_BRANCH" >/dev/null
     git config user.email "ai-factory@localhost"; git config user.name "AI Factory"
+    aif_exclude_tooling
     git commit --allow-empty -m "chore: initialize new project" >/dev/null
   fi
 else
@@ -229,6 +312,7 @@ else
   aif_git fetch origin
   git checkout "$TARGET_BRANCH"
   aif_git pull origin "$TARGET_BRANCH"
+  aif_exclude_tooling
 fi
 
 # Local mode never has a remote. Disable any credential helper at the REPO level
@@ -400,18 +484,6 @@ STAGE=select
 set_status SELECTING "picking best candidate"
 bash "${PIPELINE_DIR}/select-best-branch.sh" "$TASK_ID"
 
-if [ "$LOCAL_MODE" = false ]; then
-  STAGE=mr
-  set_status MR_CREATED "creating pull request"
-  bash "${PIPELINE_DIR}/git/create-pr.sh" "$TASK_ID"
-  # Surface the PR/MR link to the gateway. Providers use different field names:
-  # GitLab=web_url, GitHub=html_url, Bitbucket=.links.html.href.
-  if command -v jq >/dev/null 2>&1 && [ -f "/tmp/pr-${TASK_ID}.json" ]; then
-    PR_URL="$(jq -r '.web_url // .html_url // .links.html.href // empty' "/tmp/pr-${TASK_ID}.json" 2>/dev/null || true)"
-  fi
-  set_status MR_CREATED "pull request ready"
-fi
-
 STAGE=review
 set_status REVIEWING "running codex-review"
 bash "${PIPELINE_DIR}/codex-review.sh" "$TASK_ID"
@@ -419,6 +491,16 @@ bash "${PIPELINE_DIR}/codex-review.sh" "$TASK_ID"
 STAGE=fix
 set_status FIXING "running claude-fix"
 bash "${PIPELINE_DIR}/claude-fix.sh" "$TASK_ID"
+
+STAGE="test"   # quoted: it's a stage label, not the test(1) command (silences SC2209)
+# Independently run the project's own tests on the final tree and capture a
+# trustworthy result for the governance tests-pass gate (pass|fail|none). This
+# is a real signal, not the AI agent's self-report.
+set_status REVIEWING "running project tests"
+TEST_STATUS="$(BASE="$BASE" TEST_TIMEOUT_SECONDS="${TEST_TIMEOUT_SECONDS:-600}" \
+  bash "${PIPELINE_DIR}/run-tests.sh" 2>/dev/null | tail -n1)"
+case "$TEST_STATUS" in pass|fail|none) ;; *) TEST_STATUS=unknown ;; esac
+export TEST_STATUS
 
 STAGE=summary
 # Assemble a plain-language change summary for the gateway/UI from the artifacts
@@ -455,6 +537,9 @@ if [ "$LOCAL_MODE" = true ]; then
     git add EXPLAINER.md 2>/dev/null || true
     git commit -q -m "docs(${TASK_ID}): add plain-language EXPLAINER" 2>/dev/null || true
   fi
+  # EXPLAINER is the last deliverable mutation — gate BEFORE zipping so the zip
+  # can never contain post-gate, unreviewed AI content.
+  governance_gate
   ZIP_PATH="${BASE}/result.zip"
   rm -f "$ZIP_PATH"
   if command -v zip >/dev/null 2>&1; then
@@ -498,6 +583,24 @@ if [ "$LOCAL_MODE" = true ]; then
       ':(glob,exclude)**/*.keystore' ':(exclude)*.keystore' 2>/dev/null || true
   fi
   [ -f "$ZIP_PATH" ] && RESULT_ZIP="$ZIP_PATH"
+fi
+
+# Existing-repo mode gates here (local mode already gated before zip). The guard
+# in governance_gate makes this a no-op when it has already run.
+governance_gate
+
+# Open the PR/MR only AFTER the gate passes — so a blocked change never leaves a
+# mergeable PR exposed (draft enforcement varies by provider and can be disabled).
+if [ "$LOCAL_MODE" = false ]; then
+  STAGE=mr
+  set_status MR_CREATED "creating pull request"
+  bash "${PIPELINE_DIR}/git/create-pr.sh" "$TASK_ID"
+  # Surface the PR/MR link to the gateway. Providers use different field names:
+  # GitLab=web_url, GitHub=html_url, Bitbucket=.links.html.href.
+  if command -v jq >/dev/null 2>&1 && [ -f "/tmp/pr-${TASK_ID}.json" ]; then
+    PR_URL="$(jq -r '.web_url // .html_url // .links.html.href // empty' "/tmp/pr-${TASK_ID}.json" 2>/dev/null || true)"
+  fi
+  set_status MR_CREATED "pull request ready"
 fi
 
 set_status COMPLETED "pipeline finished"

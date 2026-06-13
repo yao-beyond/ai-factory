@@ -277,7 +277,10 @@ public class TaskController {
         // be treated as running, or the page would show a live feed for a stopped
         // task.
         boolean done = r.terminal();
-        boolean running = !done && !awaiting;
+        // A task waiting on human delivery approval is not "running" — don't show
+        // the live activity feed or pause/abort affordances for it.
+        boolean awaitingDelivery = s == TaskStatus.AWAITING_DELIVERY_APPROVAL;
+        boolean running = !done && !awaiting && !awaitingDelivery;
         // No meta-refresh: while running we drive updates with JS (a live activity
         // feed plus reload-on-stage-change), which a 3s full-page refresh would
         // otherwise wipe. Done/awaiting pages are static anyway.
@@ -468,7 +471,8 @@ public class TaskController {
      */
     private String controlsBlock(TaskRecord r) {
         TaskStatus s = r.status();
-        if (r.terminal() || s == TaskStatus.AWAITING_CONFIRMATION) return "";
+        if (r.terminal() || s == TaskStatus.AWAITING_CONFIRMATION
+                || s == TaskStatus.AWAITING_DELIVERY_APPROVAL) return "";
         String id = esc(r.taskId());
         boolean paused = s == TaskStatus.PAUSED;
         String first = paused
@@ -832,6 +836,17 @@ public class TaskController {
                 <div class="result stopped">
                   <h2>🛑 已停止</h2>
                   <p class="ask">這個任務已經停止了，沒有產生任何變更，放心。需要的話，重新提出一個需求就好。</p>
+                </div>
+                """;
+        }
+        if (s == TaskStatus.AWAITING_DELIVERY_APPROVAL) {
+            // The approve/reject affordance lives on the governance dashboard
+            // (Phase 1c); here we just explain the hold honestly.
+            return """
+                <div class="result await">
+                  <h2>🧑‍⚖️ 等待人類核准交付</h2>
+                  <p class="ask">這個任務已通過自動檢查，依治理政策需要有權限的人核准後才會交付。
+                  請在治理控制台檢視證據包並核准／退回。AI 不會自行交付，你可以放心。</p>
                 </div>
                 """;
         }

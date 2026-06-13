@@ -28,13 +28,19 @@ public class BashPipelineExecutor implements PipelineExecutor {
     private static final Logger log = LoggerFactory.getLogger(BashPipelineExecutor.class);
 
     private final String pipelineScript;
+    private final String serverPort;
+    private final com.lza.aifactory.governance.GovernanceTokens governanceTokens;
     // Live pipeline processes, so a task can be aborted after it starts.
     private final Map<String, Process> running = new ConcurrentHashMap<>();
     // Tasks the user aborted: makes reconcile finalize to CANCELLED, not FAILED.
     private final Set<String> abortRequested = ConcurrentHashMap.newKeySet();
 
-    public BashPipelineExecutor(@Value("${ai-factory.pipeline-script}") String pipelineScript) {
+    public BashPipelineExecutor(@Value("${ai-factory.pipeline-script}") String pipelineScript,
+                                @Value("${server.port:8080}") String serverPort,
+                                com.lza.aifactory.governance.GovernanceTokens governanceTokens) {
         this.pipelineScript = pipelineScript;
+        this.serverPort = serverPort;
+        this.governanceTokens = governanceTokens;
     }
 
     @Override
@@ -45,6 +51,21 @@ public class BashPipelineExecutor implements PipelineExecutor {
                 .redirectErrorStream(true);
 
         applyEnv(pb.environment(), request.taskId(), request.env());
+        // Tell the pipeline where to call back for the governance promote-check.
+        // Setting this is what opts a deployment into gateway-enforced gating; if a
+        // request already supplied it, the request value wins.
+        pb.environment().putIfAbsent("AIF_GATEWAY_URL", "http://127.0.0.1:" + serverPort);
+        // Per-task promote-check token: lets the pipeline authenticate the gate call
+        // WITHOUT the operator secret. applyEnv has already stripped
+        // AIF_INTERNAL_SECRET from the child env, so untrusted workspace code (AI
+        // agents, project tests) never inherits the operator credential — only this
+        // scoped token, which authorises nothing but this task's gate evaluation.
+        pb.environment().put("AIF_PROMOTE_TOKEN",
+                governanceTokens.issue(request.taskId(), "promote-check"));
+        // Rotate the gateway-owned run nonce so any approval from a previous run of
+        // this task id no longer validates (stale-approval defence). Kept in gateway
+        // memory — untrusted workspace code can't reach it.
+        governanceTokens.rotateRunNonce(request.taskId());
 
         Process process = pb.start();
         running.put(request.taskId(), process);
@@ -96,6 +117,13 @@ public class BashPipelineExecutor implements PipelineExecutor {
     public static void applyEnv(Map<String, String> env, String taskId, Map<String, String> requestEnv) {
         env.remove("SOURCE_PATH");
         env.remove("PROJECT_MODE");
+        // The operator approval secret must NEVER reach the pipeline (it would be
+        // inherited by untrusted AI agents / project tests, which could then
+        // self-approve). The pipeline authenticates promote-check with a scoped
+        // AIF_PROMOTE_TOKEN instead, set by start() after this. Strip any inherited
+        // promote token too, so only the executor's freshly-issued one is present.
+        env.remove("AIF_INTERNAL_SECRET");
+        env.remove("AIF_PROMOTE_TOKEN");
         env.put("TASK_ID", taskId);
         env.putAll(requestEnv);
     }

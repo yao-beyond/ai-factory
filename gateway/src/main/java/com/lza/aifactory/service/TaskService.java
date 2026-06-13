@@ -39,6 +39,7 @@ public class TaskService {
     private final EtaService etaService;
     private final ArchiveExtractor archiveExtractor;
     private final DiscoveryCardLibrary discoveryCardLibrary;
+    private final com.lza.aifactory.governance.GovernanceProfileLibrary governanceProfileLibrary;
     private final Path workDir;
     private final List<String> allowRepositories;
     private final Map<String, TaskRecord> tasks = new ConcurrentHashMap<>();
@@ -52,6 +53,7 @@ public class TaskService {
                        EtaService etaService,
                        ArchiveExtractor archiveExtractor,
                        DiscoveryCardLibrary discoveryCardLibrary,
+                       com.lza.aifactory.governance.GovernanceProfileLibrary governanceProfileLibrary,
                        @Value("${ai-factory.work-dir}") String workDir,
                        @Value("${ai-factory.allow-repositories:}") String allowRepositoriesCsv) {
         this.objectMapper = objectMapper;
@@ -60,6 +62,7 @@ public class TaskService {
         this.etaService = etaService;
         this.archiveExtractor = archiveExtractor;
         this.discoveryCardLibrary = discoveryCardLibrary;
+        this.governanceProfileLibrary = governanceProfileLibrary;
         this.workDir = Path.of(workDir);
         // Allowlist = typed config (ai-factory.yml security.allowRepositories)
         // plus the legacy CSV property, for backward compatibility.
@@ -173,6 +176,11 @@ public class TaskService {
         // the boundary (the request degrades to a plain typed one).
         resolveDiscoveryBoundary(dto);
 
+        // Resolve the governance profile against the library (unknown id -> 400, so
+        // a forged id can't smuggle an ungoverned task). Default keeps existing
+        // behaviour. The chosen id is persisted via issue.json (dto serialised below).
+        resolveGovernanceProfile(dto);
+
         Path taskDir = workDir.resolve(taskId);
         Files.createDirectories(taskDir);
         Files.writeString(taskDir.resolve("issue.json"),
@@ -274,6 +282,36 @@ public class TaskService {
      * authoritative one re-derived from the card library by id. A client-supplied
      * boundary is never trusted; an unknown/disabled card id clears both fields.
      */
+    /**
+     * Validate the requested governance profile against the library. A blank id
+     * defaults to {@code standard-app}; an unknown/disabled id is rejected (400)
+     * so a client can never run a task under a profile the library doesn't vouch
+     * for. The resolved id is normalised back onto the dto (persisted in issue.json).
+     */
+    private void resolveGovernanceProfile(IssueDto dto) {
+        String id = dto.getGovernanceProfileId();
+        if (id == null || id.isBlank()) {
+            id = "standard-app";
+        }
+        if (governanceProfileLibrary.enabledById(id).isEmpty()) {
+            throw new IllegalArgumentException("未知的治理 profile：" + id);
+        }
+        dto.setGovernanceProfileId(id);
+    }
+
+    /** The task's governance profile id (from issue.json; default standard-app). */
+    public String readGovernanceProfileId(String taskId) {
+        Path issue = workDir.resolve(normalizeTaskId(taskId)).resolve("issue.json");
+        if (!Files.exists(issue)) return "standard-app";
+        try {
+            IssueDto dto = objectMapper.readValue(Files.readString(issue), IssueDto.class);
+            String id = dto.getGovernanceProfileId();
+            return (id == null || id.isBlank()) ? "standard-app" : id;
+        } catch (IOException e) {
+            return "standard-app";
+        }
+    }
+
     private void resolveDiscoveryBoundary(IssueDto dto) {
         String cardId = dto.getDiscoveryCardId();
         if (cardId == null || cardId.isBlank()) {
@@ -514,57 +552,12 @@ public class TaskService {
 
     // --- Secret redaction for the live activity feed ----------------------------
     // The feed surfaces the tail of run.log, which can echo credentials a pipeline
-    // command printed (a clone URL with a token, a key=value secret, etc.). These
-    // patterns mask the secret value before it ever leaves the server. Defence in
-    // depth: the log shown is a sanitised view, never the raw bytes.
-
-    // scheme://user:secret@host  ->  scheme://<redacted>@host
-    private static final java.util.regex.Pattern URL_CREDS =
-            java.util.regex.Pattern.compile("([a-zA-Z][a-zA-Z0-9+.\\-]*://)[^/\\s:@]+:[^/\\s@]+@");
-    // Known provider token shapes (GitHub, GitLab, Slack, AWS, OpenAI, Google).
-    private static final java.util.regex.Pattern KNOWN_TOKEN =
-            java.util.regex.Pattern.compile(
-                    "(gh[posru]_[A-Za-z0-9]{16,}"
-                    + "|glpat-[A-Za-z0-9_\\-]{16,}"
-                    + "|xox[baprs]-[A-Za-z0-9\\-]{10,}"
-                    + "|AKIA[0-9A-Z]{16}"
-                    + "|sk-[A-Za-z0-9]{20,}"
-                    + "|AIza[0-9A-Za-z_\\-]{20,})");
-    // An identifier that *contains* a secret word, then = or : and a value, e.g.
-    // AWS_SECRET_ACCESS_KEY=...  or  api-key: ... . Underscore/hyphen tolerant so
-    // env-var-style names are caught even though \b wouldn't fire between words.
-    private static final java.util.regex.Pattern ASSIGN_SECRET =
-            java.util.regex.Pattern.compile(
-                    "(?i)([A-Za-z0-9_\\-]*"
-                    + "(?:secret|token|passwd|password|pwd|api[_-]?key|access[_-]?key|"
-                    + "private[_-]?key|credential)"
-                    + "[A-Za-z0-9_\\-]*)(\\s*[:=]\\s*)(?:Bearer\\s+|Basic\\s+)?\\S+");
-    // An `authorization` / `auth` key (whole word, so `author`/`oauth_state` are
-    // left alone) followed by : or = — mask the whole value.
-    private static final java.util.regex.Pattern AUTH_HEADER =
-            java.util.regex.Pattern.compile("(?i)\\b(authorization|auth)\\b(\\s*[:=]\\s*).+");
-    // Bearer/Basic <token> anywhere; token long enough that it isn't prose.
-    private static final java.util.regex.Pattern BEARER =
-            java.util.regex.Pattern.compile("(?i)\\b(bearer|basic)\\s+[A-Za-z0-9._+/=\\-]{8,}");
-    // A bare 40-char AWS secret access key. Requires at least one + or / so a
-    // 40-hex git SHA (which never contains + or /) is never matched.
-    private static final java.util.regex.Pattern AWS_SECRET_BARE =
-            java.util.regex.Pattern.compile(
-                    "(?<![A-Za-z0-9+/])(?=[A-Za-z0-9+/]{40}(?![A-Za-z0-9+/]))"
-                    + "[A-Za-z0-9+/]*[+/][A-Za-z0-9+/]*");
-    // Host home directory: /Users/<name>/...  ->  /Users/<user>/... (hide the OS account)
-    private static final java.util.regex.Pattern HOME_PATH =
-            java.util.regex.Pattern.compile("(/Users/|/home/)[^/\\s]+");
-
+    // command printed (a clone URL with a token, a key=value secret, etc.). The
+    // masking lives in the shared SecretRedactor so every surface that echoes
+    // pipeline/agent output (feed, AI markdown, governance events) gets the same
+    // defence-in-depth view, never the raw bytes.
     private static String redactSecrets(String line) {
-        String s = URL_CREDS.matcher(line).replaceAll("$1<redacted>@");
-        s = KNOWN_TOKEN.matcher(s).replaceAll("<redacted>");
-        s = ASSIGN_SECRET.matcher(s).replaceAll("$1$2<redacted>");
-        s = AUTH_HEADER.matcher(s).replaceAll("$1$2<redacted>");
-        s = BEARER.matcher(s).replaceAll("$1 <redacted>");
-        s = AWS_SECRET_BARE.matcher(s).replaceAll("<redacted>");
-        s = HOME_PATH.matcher(s).replaceAll("$1<user>");
-        return s;
+        return SecretRedactor.redact(line);
     }
 
     /**
@@ -1010,7 +1003,13 @@ public class TaskService {
         return out;
     }
 
-    private String normalizeTaskId(String value) {
+    /**
+     * Sanitise a task id to a safe single path segment (no traversal): non
+     * [A-Za-z0-9._-] chars become '-', and an all-dots value (".", "..") is
+     * replaced, so {@code workDir.resolve(id)} can never escape the work dir.
+     * Public so other governance/read paths reuse the same audited guard.
+     */
+    public String normalizeTaskId(String value) {
         String v = (value == null ? "" : value).replaceAll("[^A-Za-z0-9._-]", "-");
         // Never allow an id that resolves to the work dir itself ("." / "") or its
         // parent (".."), which would let path ops escape the per-task directory.

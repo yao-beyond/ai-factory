@@ -13,6 +13,9 @@ test:
 test-scripts:
 	bash scripts/tests/explainer-test.sh
 	bash scripts/tests/plan-refine-test.sh
+	bash scripts/tests/governance-gate-test.sh
+	bash scripts/tests/run-tests-test.sh
+	bash scripts/tests/select-checkout-test.sh
 
 # Run tests + produce the JaCoCo coverage report.
 coverage:

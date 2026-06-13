@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "dup", "version": 1, "enabled": true, "riskTier": "standard",
+      "title": "重複一", "description": "allow 與 deny 衝突 + 重複 id",
+      "protectedPaths": [],
+      "capabilities": {
+        "implementer": { "allow": ["read:repo", "merge:main"], "deny": ["merge:main"] },
+        "reviewer": { "allow": ["read:diff"], "deny": ["write:source"] }
+      },
+      "gates": { "beforeDeliverable": ["tests-pass"] },
+      "independence": { "requireDistinctPrincipal": true, "requireReviewerReadOnly": true, "requireDistinctVendor": false },
+      "humanApproval": "optional", "allowReviewBypass": false
+    },
+    {
+      "id": "dup", "version": 1, "enabled": true, "riskTier": "standard",
+      "title": "重複二", "description": "與上面同 id",
+      "protectedPaths": [],
+      "capabilities": {
+        "implementer": { "allow": ["read:repo"], "deny": [] },
+        "reviewer": { "allow": ["read:diff"], "deny": [] }
+      },
+      "gates": { "beforeDeliverable": ["unknown-gate"] },
+      "independence": { "requireDistinctPrincipal": true, "requireReviewerReadOnly": true, "requireDistinctVendor": false },
+      "humanApproval": "optional", "allowReviewBypass": false
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "bad-cap", "version": 1, "enabled": true, "riskTier": "standard",
+      "title": "壞能力", "description": "引用未知能力",
+      "protectedPaths": [],
+      "capabilities": {
+        "implementer": { "allow": ["read:repo", "launch:missiles"], "deny": [] },
+        "reviewer": { "allow": ["read:diff"], "deny": [] }
+      },
+      "gates": { "beforeDeliverable": ["tests-pass"] },
+      "independence": { "requireDistinctPrincipal": true, "requireReviewerReadOnly": true, "requireDistinctVendor": false },
+      "humanApproval": "optional", "allowReviewBypass": false
+    }
+  ]
+}

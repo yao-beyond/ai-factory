@@ -15,6 +15,7 @@ public enum TaskStatus {
     MR_CREATED("📬", "已產生成果草案", 75),
     REVIEWING("🔍", "程式碼品質與安全檢查", 85),
     FIXING("🛠️", "依審查建議修正中", 95),
+    AWAITING_DELIVERY_APPROVAL("🧑‍⚖️", "等待人類核准交付", 90),
     COMPLETED("✅", "開發完成", 100),
     FAILED("⚠️", "發生問題，需要人工查看", 100),
     PAUSED("⏸️", "已暫停，等你說繼續", 50),

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "hollow-high", "version": 1, "enabled": true, "riskTier": "high",
+      "title": "形同虛設的高風險", "description": "high 風險卻無人類核准/獨立審查閘門",
+      "protectedPaths": ["src/**"],
+      "capabilities": {
+        "implementer": { "allow": ["read:repo", "write:workspace"], "deny": ["merge:main"] },
+        "reviewer": { "allow": ["read:diff"], "deny": ["write:source"] }
+      },
+      "gates": { "beforeDeliverable": ["tests-pass"] },
+      "independence": { "requireDistinctPrincipal": true, "requireReviewerReadOnly": true, "requireDistinctVendor": true },
+      "humanApproval": "optional", "allowReviewBypass": false
+    }
+  ]
+}

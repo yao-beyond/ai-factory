@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "standard-app",
+      "version": 1,
+      "enabled": true,
+      "riskTier": "standard",
+      "title": "一般應用",
+      "description": "內部工具、實驗性功能，低敏感度。預設 profile，行為與未治理時等價。",
+      "protectedPaths": [],
+      "capabilities": {
+        "implementer": {
+          "allow": ["read:repo", "write:workspace", "run:tests", "propose:pr"],
+          "deny": ["merge:main", "access:prod-secrets", "approve:own-change"]
+        },
+        "reviewer": {
+          "allow": ["read:diff", "read:test-results", "emit:review-decision"],
+          "deny": ["write:source", "merge:main", "approve:own-review"]
+        }
+      },
+      "gates": { "beforeDeliverable": ["tests-pass", "evidence-bundle-complete"] },
+      "independence": {
+        "requireDistinctPrincipal": true,
+        "requireReviewerReadOnly": true,
+        "requireDistinctVendor": false
+      },
+      "humanApproval": "optional",
+      "allowReviewBypass": false
+    },
+    {
+      "id": "regulated-service",
+      "version": 1,
+      "enabled": true,
+      "riskTier": "high",
+      "title": "受規管服務",
+      "description": "受合規要求的服務模組，需獨立審查與人類核准。",
+      "protectedPaths": ["src/**"],
+      "capabilities": {
+        "implementer": {
+          "allow": ["read:repo", "write:workspace", "run:tests", "propose:pr"],
+          "deny": ["merge:main", "access:prod-secrets", "approve:own-change", "modify:policy"]
+        },
+        "reviewer": {
+          "allow": ["read:diff", "read:test-results", "run:static-analysis", "emit:review-decision"],
+          "deny": ["write:source", "merge:main", "approve:own-review"]
+        }
+      },
+      "gates": {
+        "beforeDeliverable": ["tests-pass", "independent-review-pass", "human-approval", "evidence-bundle-complete"]
+      },
+      "independence": {
+        "requireDistinctPrincipal": true,
+        "requireReviewerReadOnly": true,
+        "requireDistinctVendor": true
+      },
+      "humanApproval": "required",
+      "allowReviewBypass": false
+    },
+    {
+      "id": "compliance-patcher",
+      "version": 1,
+      "enabled": true,
+      "riskTier": "critical",
+      "title": "合規修復員",
+      "description": "資安掃描發現 CVE/不合規配置時，自動生成修復並產出完整證據包。旗艦展示 profile。",
+      "protectedPaths": ["src/**", "infra/**", "db/migrations/**"],
+      "capabilities": {
+        "implementer": {
+          "allow": ["read:repo", "write:workspace", "run:tests", "propose:pr"],
+          "deny": ["merge:main", "access:prod-secrets", "approve:own-change", "modify:policy"]
+        },
+        "reviewer": {
+          "allow": ["read:diff", "read:test-results", "run:static-analysis", "emit:review-decision"],
+          "deny": ["write:source", "merge:main", "approve:own-review"]
+        }
+      },
+      "gates": {
+        "beforeDeliverable": ["tests-pass", "independent-review-pass", "human-approval", "evidence-bundle-complete"]
+      },
+      "independence": {
+        "requireDistinctPrincipal": true,
+        "requireReviewerReadOnly": true,
+        "requireDistinctVendor": true
+      },
+      "humanApproval": "required",
+      "allowReviewBypass": false
+    },
+    {
+      "id": "emergency-hotfix",
+      "version": 1,
+      "enabled": true,
+      "riskTier": "critical",
+      "title": "緊急修復（特批）",
+      "description": "生產事故時的特權通道：允許繞過獨立審查，但強制留下例外理由，並須於 24h 內補齊證據。",
+      "protectedPaths": ["src/**", "infra/**"],
+      "capabilities": {
+        "implementer": {
+          "allow": ["read:repo", "write:workspace", "run:tests", "propose:pr"],
+          "deny": ["merge:main", "access:prod-secrets", "approve:own-change", "modify:policy"]
+        },
+        "reviewer": {
+          "allow": ["read:diff", "read:test-results", "emit:review-decision"],
+          "deny": ["write:source", "merge:main", "approve:own-review"]
+        }
+      },
+      "gates": {
+        "beforeDeliverable": ["tests-pass", "override-rationale-recorded", "human-approval", "evidence-bundle-complete"]
+      },
+      "independence": {
+        "requireDistinctPrincipal": true,
+        "requireReviewerReadOnly": true,
+        "requireDistinctVendor": false
+      },
+      "humanApproval": "required",
+      "allowReviewBypass": true
+    }
+  ]
+}

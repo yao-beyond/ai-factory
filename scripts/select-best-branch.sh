@@ -192,6 +192,10 @@ if ! git rev-parse --verify "$SOURCE" >/dev/null 2>&1; then
 fi
 
 echo "Selected $SOURCE for final (score=${EV_SCORE[$CHOSEN]:-n/a} manual=${MANUAL_OVERRIDE} allDq=${ALL_DISQUALIFIED})"
+# Resilience: an untracked AI-tooling dir in the working tree (.omc/.claude/.codex)
+# can collide with a tracked copy in the candidate branch and abort the checkout.
+# These are never part of the deliverable, so drop them before switching.
+git clean -fdq -- .omc .claude .codex 2>/dev/null || true
 git checkout -B "ai/${TASK_ID}/final" "$SOURCE"
 mkdir -p docs/ai
 
