@@ -46,6 +46,7 @@
 - 產出**單機瀏覽器小工具**：記帳、待辦、習慣打卡、倒數、小計算機、CSV 檢視器
 - **「幫我想想」**：沒頭緒也沒關係——兩個小問題 + 成品卡片，幫你把模糊念頭變成可建造的需求
 - 全程**人類把關**：AI 只產出可審查草稿（可下載／預覽，或草稿 PR），絕不碰 `main`
+- **可選的變更治理**（依風險分級）：高風險任務可要求獨立審查＋人類核准，全程留可驗證證據；預設 profile 較輕（近似未治理）
 
 **❌ 目前還做不到（需未來的後端層）**
 - 沒有後端伺服器、資料庫、帳號登入、線上金流、第三方整合
@@ -90,6 +91,26 @@
 - ⏸️ **隨時可暫停／中止**：進行中的任務可以暫停、繼續或中止。
 - 📦 **成果是草稿，不是上線**：全新專案以可下載／可預覽的 `result.zip` 交付；既有專案開**草稿 PR**（清楚標示為 AI 產生、需人工審查），AI **絕不自行碰 `main` 或保護分支**。
 - 🛡️ **雙重把關**：Codex 自動安全審查作為輔助，但 AI **不會自行合併或上線**——最終的合併與採用，由你決定。
+
+---
+
+## 🏛️ AI 變更治理（治理 runtime · Phase 1）
+
+一層**依風險分級**的變更控制——放行條件看任務套用的治理 profile，不是每個任務都套同一組閘門。
+
+- **攔截控制台** `/gateway/governance/dashboard`：被擋下的動作、等你核准的交付、
+  目前生效的例外、政策摩擦熱點，一頁看完。
+- **依 profile 而定的放行閘門**（每個 profile 自己宣告要過哪些）：
+  - 預設 `standard-app`：只要求 tests-pass + 證據包完整，**行為與未治理時相近**。
+  - 較嚴格的 profile 可再加**獨立審查**／**人類核准**／要求 implementer 與 reviewer
+    不同 vendor。例如 `compliance-patcher`、`regulated-service` 三者皆要；`emergency-hotfix`
+    要人類核准、但以「記錄 override 理由」替代獨立審查。任一要求沒過，產出就不會變成「可交付」。
+- **雜湊鏈證據包（GEP）**：每個變更留一條可驗證、防竄改的紀錄——誰核准、擋了什麼、
+  套了哪條政策，都講成人話。
+- **核准端點 fail-closed**：對需要人類核准的 profile，approve／reject／override 一律需
+  operator 密鑰；AI 連自己的交付都核准不了（連寫這套治理程式的 AI 也繞不過）。
+- **誠實邊界**：GATEWAY 層是真強制（不可交付就是不可交付）；執行層隔離（禁網路、
+  禁寫保護路徑外）需要 sandbox，列為後續階段；模型語意層只能偵測、不宣稱能阻止。
 
 ---
 
@@ -168,6 +189,7 @@ export AI_FACTORY_PIPELINE_SCRIPT=$(pwd)/../scripts/run-task.sh
 ### API 端點與 Webhooks
 *   **UI 路由**: `/` (首頁)、`/gateway/ui` (列表)、`/gateway/ui/{id}` (進度)
 *   **任務操作**: `POST /gateway/issue` (建立)、`POST /gateway/confirm/{id}` (確認)
+*   **治理**: `/gateway/governance/dashboard` (攔截控制台)、`POST .../{id}/promote-check` (跑放行閘門)、`POST .../{id}/approve|reject|override` (人類決策，需 operator 密鑰)、`GET .../{id}/gep` (下載證據包)
 *   **整合 Webhooks**: 支援 `/webhook/jira` 與 `/webhook/telegram`
 *   **監控**: `/actuator/health`
 

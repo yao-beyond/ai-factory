@@ -51,6 +51,7 @@ Our principle is **"claims must match reality — never overpromise"**, so here'
 - Generate **single-user, browser-local tools**: expense tracker, to-do list, habit tracker, countdown, calculator, CSV viewer
 - **Discovery**: stuck on a blank page? Two questions + concrete starter cards turn a vague itch into a buildable request
 - **Human-in-the-loop throughout**: the AI only produces a reviewable draft (downloadable / previewable, or a Draft PR) and never touches `main`
+- **Optional change governance** (risk-tiered): high-risk tasks can require independent review + human approval with a verifiable evidence trail; the default profile is lighter (close to ungoverned)
 
 **❌ What it can't do yet (needs a future backend tier)**
 - No backend server, database, accounts/login, online payments, or third-party integrations
@@ -95,6 +96,20 @@ This isn't just a slogan — it's built into the guardrails:
 - ⏸️ **Pause / stop anytime** — a running task can be paused, resumed, or stopped.
 - 📦 **Drafts, not deployments** — new projects ship as a downloadable / previewable `result.zip`; existing projects get a **draft PR** (clearly marked as AI-generated and needing human review), and the AI **never touches `main` or protected branches**.
 - 🛡️ **Two layers of review** — Codex runs an automated safety review to assist you, but the AI **never merges or ships on its own** — the merge and the call are yours.
+
+---
+
+## 🏛️ AI change governance (governance runtime · Phase 1)
+
+An optional, **risk-tiered** change-control layer — what it takes to ship depends on the task's governance profile, not one fixed set of gates for everything.
+
+- **Interception console** at `/gateway/governance/dashboard`: blocked actions, deliveries awaiting your approval, active overrides, and policy-friction hotspots — on one page.
+- **Per-profile promotion gates** (each profile declares which it requires):
+  - Default `standard-app`: only tests-pass + a complete evidence bundle — **close to ungoverned behavior**.
+  - Stricter profiles can add **independent review**, **human approval**, and/or a different-vendor requirement for implementer vs reviewer. For example `compliance-patcher` and `regulated-service` require all of these; `emergency-hotfix` requires human approval but swaps independent review for a recorded override rationale. If any required gate fails, the output never becomes "deliverable."
+- **Hash-chained evidence pack (GEP)**: every change carries a verifiable, tamper-evident record — who approved, what was blocked, which policy applied — in plain language.
+- **Fail-closed approval**: for profiles that require human approval, approve / reject / override all require an operator secret; the AI cannot approve its own delivery (not even the AI that wrote the governance code can bypass it).
+- **Honest boundaries**: the GATEWAY layer is truly enforced (not-deliverable means not-deliverable); execution-layer isolation (no network, no writes outside allowed paths) needs a sandbox and is a later phase; the model-semantic layer is detect-only — we never claim to block it.
 
 ---
 
@@ -241,6 +256,10 @@ Secrets stay in environment / `.env`. Load order: `AI_FACTORY_CONFIG` →
 | GET | `/gateway/result/{taskId}` | Download a new-project result (zip) |
 | GET | `/gateway/status/{taskId}` | Task status (JSON) |
 | POST | `/webhook/jira`, `/webhook/telegram` | Webhook submission |
+| GET | `/gateway/governance/dashboard` | Interception console (blocked / pending / overrides) |
+| POST | `/gateway/governance/{taskId}/promote-check` | Evaluate the deliverable gates |
+| POST | `/gateway/governance/{taskId}/approve`, `/reject`, `/override` | Human decision (operator secret required) |
+| GET | `/gateway/governance/{taskId}/gep` | Download the human-readable evidence pack |
 | GET | `/actuator/health` | Readiness / liveness |
 
 ### State machine
