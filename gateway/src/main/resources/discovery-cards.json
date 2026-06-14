@@ -30,10 +30,10 @@
       "ownerReceivesData": false,
       "title": "社群傳送門",
       "oneLiner": "把 LINE、IG、臉書、地址放在同一頁，客人點一下就通。",
-      "draftTemplate": "建立一個單頁的社群連結集合頁，把多個社群與聯絡管道做成大按鈕，搭配頭像與簡介。純靜態頁面，不做點擊統計、不需要後端或帳號。",
-      "assumptions": ["連結由你事先填好", "不追蹤點擊"],
+      "draftTemplate": "建立一個單頁的社群連結集合頁，把多個社群與聯絡管道做成大按鈕，搭配頭像與簡介。純靜態頁面，不做點選統計、不需要後端或帳號。",
+      "assumptions": ["連結由你事先填好", "不追蹤點選"],
       "included": ["多個外連按鈕", "頭像", "簡介"],
-      "excluded": ["點擊統計", "帳號", "後台"],
+      "excluded": ["點選統計", "帳號", "後台"],
       "constraints": {"actors": 1, "workflows": 1, "dataSources": [], "externalIntegrations": false, "auth": false, "payment": false}
     },
     {
