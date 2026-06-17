@@ -85,8 +85,10 @@ public class EvidenceService {
             sb.append("- ⚠️ 雜湊鏈在 seq ").append(events.brokenSeq())
               .append(" 處驗證失敗：事件紀錄可能遭竄改，請人工調查。\n");
         } else {
-            sb.append("- ✅ 雜湊鏈驗證通過（事件紀錄未被竄改）\n");
+            sb.append("- ✅ 雜湊鏈驗證通過（未發現竄改）\n");
         }
+        sb.append("- ℹ️ 此為可偵測竄改（tamper-evident）的雜湊鏈，非密碼學簽章；")
+          .append("無法防範能重寫整個檔的主機層攻擊者（外部簽章為後續階段）。\n");
         return sb.toString();
     }
 

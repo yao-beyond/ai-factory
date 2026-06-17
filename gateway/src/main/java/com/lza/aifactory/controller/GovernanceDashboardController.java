@@ -54,10 +54,11 @@ public class GovernanceDashboardController {
                       <div class="acts">
                         <button class="ok" data-task-id="%s" data-action="approve" onclick="decide(this)">✅ 核准交付</button>
                         <button class="no" data-task-id="%s" data-action="reject" onclick="decide(this)">❌ 退回</button>
+                        <a class="gep" href="/gateway/governance/%s/explorer">🔍 證據鏈</a>
                         <a class="gep" href="/gateway/governance/%s/gep">📄 證據包</a>
                       </div>
                     </div>
-                    """.formatted(id, id, esc(orDash(p.title())), id, id, id));
+                    """.formatted(id, id, esc(orDash(p.title())), id, id, id, id));
             }
         }
 
@@ -71,9 +72,11 @@ public class GovernanceDashboardController {
                       <span class="badge">🛡️ Safe Catch</span>
                       <span class="k"><a href="/gateway/ui/%s">%s</a></span>
                       <span class="d">%s</span>
+                      <a class="gep" href="/gateway/governance/%s/explorer">🔍 證據鏈</a>
                       <span class="ts">%s</span>
                     </div>
-                    """.formatted(esc(i.taskId()), esc(i.taskId()), esc(orDash(i.detail())), esc(orDash(i.occurredAt()))));
+                    """.formatted(esc(i.taskId()), esc(i.taskId()), esc(orDash(i.detail())),
+                        esc(i.taskId()), esc(orDash(i.occurredAt()))));
             }
         }
 
