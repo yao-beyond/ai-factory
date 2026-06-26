@@ -627,13 +627,20 @@ public class TaskController {
             int agents = taskService.readMaxAgents(r.taskId());
             CostEstimateService.TokenRange cost =
                     costEstimateService.estimate(agents, planText.length());
+            // Novice-facing band (低/中/高) from the upper bound, so the first glance
+            // isn't a scary raw token number; the exact range stays one click away.
+            // Thresholds roughly track the 快速 / 穩健 / 徹底 tiers (see CostEstimateService).
+            String costBand = cost.highWan() <= 50 ? "低（小工具等級）"
+                    : cost.highWan() <= 120 ? "中（一般頁面或工具）" : "高（較複雜或徹底模式）";
             String costHtml = """
-                <div class="cost">🪙 預估 AI 用量：約 <b>%d ～ %d 萬</b> tokens
-                  <div class="cost-sub">tokens 是 AI 的工作量單位——%d 位 AI 工程師會用它來讀計畫、寫程式、跑測試。
-                  這是開工前的粗估，實際消耗會依任務複雜度與執行的測試量彈性調整。訂閱制方案通常只是消耗每月額度；
-                  用 API 金鑰計費的話，費用請參考你的 AI 供應商定價。</div>
+                <div class="cost">🪙 本次預估 AI 用量：<b>%s</b>
+                  <details class="cost-more"><summary>看詳細數字</summary>
+                    <div class="cost-sub">約 <b>%d ～ %d 萬</b> tokens——tokens 是 AI 的工作量單位，%d 位 AI 工程師會用它來讀計畫、寫程式、跑測試。
+                    這是開工前的粗估，實際會依任務複雜度與執行的測試量調整。訂閱制方案通常只是消耗每月額度；
+                    用 API 金鑰計費的話，費用請參考你的 AI 供應商定價。</div>
+                  </details>
                 </div>
-                """.formatted(cost.lowWan(), cost.highWan(), agents);
+                """.formatted(costBand, cost.lowWan(), cost.highWan(), agents);
 
             String id = esc(r.taskId());
             return """
@@ -666,12 +673,16 @@ public class TaskController {
                   .cost{background:#fffbeb;border:1px solid #f0d999;border-radius:10px;
                         padding:10px 14px;margin:12px 0 4px;font-size:14px;color:#1f2328;}
                   .cost-sub{font-size:12px;color:#8a6d3b;margin-top:4px;line-height:1.5;}
+                  .cost-more summary{cursor:pointer;font-size:12px;color:#8a6d3b;margin-top:2px;}
+                  .preflight-note{background:#eef6ff;border:1px solid #b6daff;border-radius:10px;
+                        padding:10px 14px;margin:12px 0 4px;font-size:13px;color:#1f2328;line-height:1.6;}
                 </style>
                 <div class="result await">
                   <h2>📝 粉圓想跟你對一下開工方向！</h2>
                   %s
                   %s
                   %s
+                  <p class="preflight-note">🛑 AI 還沒動工——還沒改任何東西、也還沒正式交付。你按下開工後才會開始；而且交付的是<b>可預覽草稿</b>，不會自動上線、也不會自動收款。</p>
                   <div class="confirm-actions">
                     <button class="btn ok" onclick="decide('confirm')">✅ 就照這樣開工！</button>
                     <button class="btn no" onclick="decide('cancel')">❌ 先不做了</button>
@@ -771,16 +782,19 @@ public class TaskController {
             if (taskService.isNewProjectResult(r.taskId())) {
                 // Only link the download when the zip really exists, so we never
                 // render a button that 404s.
-                String dl = taskService.resultZip(r.taskId()).isPresent()
+                boolean hasZip = taskService.resultZip(r.taskId()).isPresent();
+                boolean hasPreview = taskService.hasPreview(r.taskId());
+                boolean hasExplainer = taskService.hasExplainer(r.taskId());
+                String dl = hasZip
                         ? "<a class=\"btn\" href=\"/gateway/result/" + esc(r.taskId()) + "\">⬇️ 下載你的專案（zip）</a>"
                         : "<p>成果整理中，稍候重新整理即可下載。</p>";
                 // If it's a web project (has index.html), offer a one-click browser preview.
-                String preview = taskService.hasPreview(r.taskId())
+                String preview = hasPreview
                         ? "<a class=\"btn\" href=\"/gateway/preview/" + esc(r.taskId()) + "/\" target=\"_blank\" rel=\"noopener\">👀 線上預覽成果</a>"
                         : "";
                 // Advertise the plain-language guided tour — but only when this
                 // task's deliverable actually contains one (older tasks don't).
-                String explainerNote = taskService.hasExplainer(r.taskId())
+                String explainerNote = hasExplainer
                         ? "<p class=\"ask\">📖 隨附一份 <b>EXPLAINER.md</b>——粉圓為你準備的白話導覽。解壓縮後請先閱讀它，了解 AI 幫你做了哪些改動！</p>"
                         : "";
                 // Iterate without re-uploading: a follow-up task seeded from this
@@ -788,19 +802,37 @@ public class TaskController {
                 String continueBtn = taskService.resultDir(r.taskId()).isPresent()
                         ? "<a class=\"btn\" href=\"/?continue=" + esc(r.taskId()) + "\">🔁 根據這個成果繼續修改</a>"
                         : "";
+                // The honest blocks must reference ONLY the affordances actually rendered
+                // on this page — never point at a 線上預覽 / EXPLAINER this deliverable lacks.
+                String seeNow = hasPreview
+                        ? "點上面的「線上預覽成果」，直接在瀏覽器試用。"
+                        : hasZip ? "下載上面的 zip，解壓縮後打開成果來看。"
+                        : "成果整理好後，這裡會出現預覽或下載連結。";
+                String changeIt = hasExplainer
+                        ? "文字、品項、價格等內容——照交付包裡的 <b>EXPLAINER</b> 白話導覽操作，或交給工程師。"
+                        : "文字、品項、價格等內容——可交給工程師，或自行參考交付內容調整。";
                 return """
+                    <style>
+                      .deliver-honest{background:#f6f8fa;border:1px solid #d0d7de;border-radius:10px;
+                            padding:12px 16px;margin:14px 0 4px;font-size:13px;line-height:1.7;color:#1f2328;}
+                      .deliver-honest .blk{margin:4px 0;}
+                    </style>
                     <div class="result ok">
                       <h2>✅ 你的全新專案做好了</h2>
+                      <p class="ask">這是一個<b>可試看的初版</b>，還不是正式上線的成品。</p>
                       %s
                       %s
                       %s
                       %s
                       %s
+                      <div class="deliver-honest">
+                        <div class="blk">👀 <b>現在就能看的</b>：%s</div>
+                        <div class="blk">✏️ <b>你可以改的</b>：%s</div>
+                        <div class="blk">🚧 <b>還不能自動做到的</b>：正式上線、收款、自動傳 LINE、資料長期保存——這些需要額外設定或協助，不會自動發生。</div>
+                      </div>
                       %s
-                      <p class="ask">%s想保留或進一步調整，下載 zip 後交給工程師、或之後用「線上發布」功能即可。</p>
                     </div>
-                    """.formatted(summary, selection, preview, dl, continueBtn, explainerNote,
-                        preview.isEmpty() ? "" : "點「線上預覽」就能直接在瀏覽器看成果。");
+                    """.formatted(preview, explainerNote, summary, dl, continueBtn, seeNow, changeIt, selection);
             }
             // Existing-repo result: a reviewable pull request.
             String button = (r.prUrl() != null && !r.prUrl().isBlank())

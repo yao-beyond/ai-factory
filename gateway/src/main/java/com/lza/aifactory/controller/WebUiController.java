@@ -77,6 +77,12 @@ public class WebUiController {
                 .de-arrow{font-size:20px;color:#bf8700;}
                 .prefill-banner{display:none;background:#e9f7ef;border:1px solid #b7ebc9;border-radius:10px;
                       padding:12px 14px;margin:0 0 18px;font-size:13px;color:#1a7f37;}
+                .advanced{margin:18px 0 0;border:1px solid #d0d7de;border-radius:8px;background:#f6f8fa;}
+                .advanced summary{cursor:pointer;padding:12px 14px;font-size:13px;font-weight:600;color:#57606a;list-style:none;}
+                .advanced summary::-webkit-details-marker{display:none;}
+                .advanced summary:before{content:"▸ ";color:#8b949e;}
+                .advanced[open] summary:before{content:"▾ ";}
+                .adv-body{padding:0 14px 14px;}
               </style>
             </head>
             <body>
@@ -91,22 +97,6 @@ public class WebUiController {
                 </a>
                 <div class="prefill-banner" id="prefillBanner"></div>
                 <form id="f" onsubmit="return submitForm(event)">
-                  <div id="modeSection">
-                    <label>你想做什麼？</label>
-                    <div class="mode">
-                      <label><input type="radio" name="mode" value="new" checked onchange="onMode()"><span>✨ 做全新的</span></label>
-                      <label><input type="radio" name="mode" value="import" onchange="onMode()"><span>📦 改我的檔案</span></label>
-                      <label><input type="radio" name="mode" value="existing" onchange="onMode()"><span>🔧 連 git 專案</span></label>
-                    </div>
-                    <div class="hint">「做全新的」與「改我的檔案」都不需要 git 帳號或金鑰。</div>
-                  </div>
-
-                  <div id="uploadRow" style="display:none">
-                    <label for="file">上傳你現有的專案（.zip）</label>
-                    <input type="file" id="file" accept=".zip">
-                    <div class="hint">把你現有的檔案壓成一個 zip 上傳，AI 會在上面改，完成後給你可下載／預覽的成果。</div>
-                  </div>
-
                   <label for="title">標題</label>
                   <input type="text" id="title" required placeholder="例如：結帳頁面加上儲存常用地址">
                   <div class="hint">一句話講清楚要做什麼。</div>
@@ -118,23 +108,44 @@ public class WebUiController {
                   </div>
                   <textarea id="description" required placeholder="背景、想解決的問題、期待的結果。越具體越好。"></textarea>
 
-                  <label>想要什麼樣的成品？</label>
-                  <div class="project-type">
-                    <label><input type="radio" name="projectType" value="recommend" checked><span>🔵 智慧推薦</span></label>
-                    <label><input type="radio" name="projectType" value="web"><span>📄 簡約網頁</span></label>
-                    <label><input type="radio" name="projectType" value="interactive"><span>🕹️ 互動工具</span></label>
-                    <label><input type="radio" name="projectType" value="mobile"><span>📱 手機感頁面</span></label>
-                    <label><input type="radio" name="projectType" value="backend"><span>⚙️ 純工具</span></label>
-                  </div>
-                  <div class="hint">如果不確定，選「智慧推薦」由粉圓幫你決定最合適的技術組合。</div>
+                  <details class="advanced" id="advancedDetails">
+                    <summary>⚙️ 我已有專案，或想自己設定</summary>
+                    <div class="adv-body">
+                      <div id="modeSection">
+                        <label>你想做什麼？</label>
+                        <div class="mode">
+                          <label><input type="radio" name="mode" value="new" checked onchange="onMode()"><span>✨ 做全新的</span></label>
+                          <label><input type="radio" name="mode" value="import" onchange="onMode()"><span>📦 改我的檔案</span></label>
+                          <label><input type="radio" name="mode" value="existing" onchange="onMode()"><span>🔧 連 git 專案</span></label>
+                        </div>
+                        <div class="hint">「做全新的」與「改我的檔案」都不需要 git 帳號或金鑰。</div>
+                      </div>
 
-                  <label>開發強度</label>
-                  <div class="strength">
-                    <label><input type="radio" name="strength" value="1"><span>⚡ 快速</span></label>
-                    <label><input type="radio" name="strength" value="3" checked><span>⚖️ 穩健</span></label>
-                    <label><input type="radio" name="strength" value="5"><span>🔬 徹底</span></label>
-                  </div>
-                  <div class="hint">越徹底會嘗試越多種做法，花的時間也越久。</div>
+                      <div id="uploadRow" style="display:none">
+                        <label for="file">上傳你現有的專案（.zip）</label>
+                        <input type="file" id="file" accept=".zip">
+                        <div class="hint">把你現有的檔案壓成一個 zip 上傳，AI 會在上面改，完成後給你可下載／預覽的成果。</div>
+                      </div>
+
+                      <label>想要什麼樣的成品？</label>
+                      <div class="project-type">
+                        <label><input type="radio" name="projectType" value="recommend" checked><span>🔵 智慧推薦</span></label>
+                        <label><input type="radio" name="projectType" value="web"><span>📄 簡約網頁</span></label>
+                        <label><input type="radio" name="projectType" value="interactive"><span>🕹️ 互動工具</span></label>
+                        <label><input type="radio" name="projectType" value="mobile"><span>📱 手機感頁面</span></label>
+                        <label><input type="radio" name="projectType" value="backend"><span>⚙️ 純工具</span></label>
+                      </div>
+                      <div class="hint">如果不確定，選「智慧推薦」由粉圓幫你決定最合適的技術組合。</div>
+
+                      <label>開發強度</label>
+                      <div class="strength">
+                        <label><input type="radio" name="strength" value="1"><span>⚡ 快速</span></label>
+                        <label><input type="radio" name="strength" value="3" checked><span>⚖️ 穩健</span></label>
+                        <label><input type="radio" name="strength" value="5"><span>🔬 徹底</span></label>
+                      </div>
+                      <div class="hint">越徹底會嘗試越多種做法，花的時間也越久。</div>
+                    </div>
+                  </details>
 
                   <button type="submit">🚀 開始</button>
                   <div id="err"></div>
@@ -227,6 +238,12 @@ public class WebUiController {
                     if(ms){ ms.style.display = 'none'; }
                     var up = document.getElementById('uploadRow');
                     if(up){ up.style.display = 'none'; }
+                    // Continuation can't change MODE (it always re-uses the result via
+                    // /gateway/continue), but projectType + strength are still sent and
+                    // configurable — so EXPAND the advanced panel (mode/upload stay hidden
+                    // above) rather than hiding the whole thing.
+                    var adv = document.getElementById('advancedDetails');
+                    if(adv){ adv.open = true; }
                     var b = document.getElementById('prefillBanner');
                     if(b){ b.textContent = '🔁 接續上次的成果繼續修改——描述你想改什麼，粉圓會直接在原本的專案上動工！'; b.style.display='block'; }
                   }catch(e){}

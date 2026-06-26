@@ -47,6 +47,39 @@ class WebUiTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("不需要 git")));
     }
 
+    @Test
+    void homeTucksDeveloperControlsIntoAdvancedSection() throws Exception {
+        // Progressive disclosure (see docs/design/novice-entry.md §1): the novice
+        // first screen leads with describe-your-idea + Discovery; git / zip / build
+        // strength move into a collapsed "advanced" section so the first screen
+        // never front-loads the developer mental model.
+        String html = mvc.perform(get("/"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+
+        int advanced = html.indexOf("id=\"advancedDetails\"");
+        int title = html.indexOf("id=\"title\"");
+        int git = html.indexOf("連 git");
+        int strength = html.indexOf("name=\"strength\"");
+
+        org.junit.jupiter.api.Assertions.assertTrue(advanced > 0, "advanced section exists");
+        org.junit.jupiter.api.Assertions.assertTrue(html.contains("/gateway/discovery"), "Discovery CTA stays primary");
+        // Primary input (title) is above the advanced section; git + strength live INSIDE it.
+        org.junit.jupiter.api.Assertions.assertTrue(title > 0 && title < advanced, "title before advanced");
+        org.junit.jupiter.api.Assertions.assertTrue(git > advanced, "連 git tucked inside advanced");
+        org.junit.jupiter.api.Assertions.assertTrue(strength > advanced, "build strength tucked inside advanced");
+
+        // The collapsed <summary> stays visible on the first screen, so its label
+        // must NOT spell out the very jargon we are hiding (git/zip/strength). This
+        // locks the Codex stop-time finding that the collapsed first screen still
+        // exposed the technical terms.
+        String summary = html.substring(advanced, html.indexOf("</summary>", advanced));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                summary.contains("git") || summary.contains("zip")
+                        || summary.contains("強度") || summary.contains("成品"),
+                "collapsed summary label must not expose technical terms");
+    }
+
     private static byte[] zipOf(java.util.Map<String, String> entries) throws Exception {
         var bos = new java.io.ByteArrayOutputStream();
         try (var zos = new java.util.zip.ZipOutputStream(bos)) {
@@ -172,8 +205,24 @@ class WebUiTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("你的全新專案做好了")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("下載你的專案")))
+                // Novice-honest delivery framing: "viewable draft, not live" + the
+                // three honest blocks (can see / can change / can't auto-do).
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("可試看的初版")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("還不能自動做到的")))
+                // No overpromise: the not-yet-built "線上發布" wording is gone.
                 .andExpect(content().string(org.hamcrest.Matchers.not(
-                        org.hamcrest.Matchers.containsString("請工程師"))));
+                        org.hamcrest.Matchers.containsString("線上發布"))))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("請工程師"))))
+                // This task ships no index.html and no EXPLAINER.md, so the honest
+                // blocks must NOT reference a 線上預覽 / EXPLAINER that isn't there —
+                // they fall back to the zip instruction. (Locks the Codex finding
+                // "delivery page now references missing actions".)
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("線上預覽"))))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("EXPLAINER"))))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("下載上面的 zip")));
     }
 
     @Test
@@ -996,6 +1045,9 @@ class WebUiTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("在首頁加上聯絡我們連結")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("就照這樣開工")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("先不做了")))
+                // Honest pre-flight reassurance: nothing has run yet, draft not deploy.
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("AI 還沒動工")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("不會自動上線")))
                 // ETA must be hidden while waiting on a human.
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("預計還要"))));
@@ -1009,6 +1061,10 @@ class WebUiTest {
         mvc.perform(get("/gateway/ui/UAT-COST"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("預估 AI 用量")))
+                // Novice-facing band first; raw range tucked into "看詳細數字".
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("本次預估 AI 用量")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("低（小工具等級）")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("看詳細數字")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("萬</b> tokens")))
                 // putAwaitingTask submits maxAgents=1 — the estimate must echo it.
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("1 位 AI 工程師")))
